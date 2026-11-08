@@ -6,6 +6,9 @@ import { useFrappe } from "@/hooks/useFrappe"
 import { DocList, QuickEntryDialog } from "@petal/ui"
 import type { DocListMeta, DocListFetchParams, DocListFilter, QuickEntryMeta, LinkFieldOption } from "@petal/ui"
 import Link from "next/link"
+import { useRealtimeList } from "@/hooks/useRealtime"
+import { DoctypeViewHeader } from "@/components/views/DoctypeViewHeader"
+import type { DocTypeMeta } from "@/app/form/[doctype]/[name]/components/types"
 
 // ---------------------------------------------------------------------------
 // Page wrapper
@@ -26,6 +29,13 @@ export default function ListPage() {
   const [metaErr, setMetaErr]         = useState(false)
   const [listKey, setListKey]         = useState(0)
   const [showQuickEntry, setShowQuickEntry] = useState(false)
+  const [refreshSignal, setRefreshSignal]   = useState(0)
+
+  // Someone else created/saved/deleted a record — refetch the current page in place
+  useRealtimeList(doctype, () => {
+    frappe.invalidate(doctype)
+    setRefreshSignal((n) => n + 1)
+  })
 
   useEffect(() => {
     frappe.callMethod<{ docs: DocListMeta[] }>("frappe.desk.form.load.getdoctype", { doctype })
@@ -45,6 +55,8 @@ export default function ListPage() {
   const OverrideComponent = useMemo(() => (override ? lazy(override) : null), [override])
 
   async function fetchData(params: DocListFetchParams) {
+    // Lists must reflect other users' changes on refresh — skip the 30s GET cache
+    frappe.invalidate(`/doc/${doctype}?`)
     const [rows, total] = await Promise.all([
       frappe.getList({
         doctype,
@@ -79,6 +91,16 @@ export default function ListPage() {
         frappe.callMethod("frappe.client.cancel", { doctype, name }),
       ),
     )
+  }
+
+  async function handleBulkUpdate(names: string[], fieldname: string, value: unknown) {
+    const failed = await frappe.bulkAction(doctype, names, "update", { [fieldname]: value })
+    if (failed.length) throw new Error(`Could not update: ${failed.join(", ")}`)
+  }
+
+  async function handleBulkSubmit(names: string[]) {
+    const failed = await frappe.bulkAction(doctype, names, "submit")
+    if (failed.length) throw new Error(`Could not submit: ${failed.join(", ")}`)
   }
 
   async function fetchLinkOptions(linkedDoctype: string, search: string): Promise<string[]> {
@@ -148,21 +170,16 @@ export default function ListPage() {
 
   return (
     <div className="space-y-5">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm">
-        <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
-        <span className="text-muted-foreground/40">/</span>
-        <span className="font-semibold text-foreground">{doctype}</span>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">{doctype}</h1>
-        {override && (
+      <DoctypeViewHeader
+        doctype={doctype}
+        meta={meta as unknown as DocTypeMeta | null}
+        active="list"
+        actions={override ? (
           <span className="text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-full">
             Custom View
           </span>
-        )}
-      </div>
+        ) : null}
+      />
 
       {OverrideComponent ? (
         <Suspense fallback={
@@ -189,6 +206,10 @@ export default function ListPage() {
             }
           }}
           onDelete={handleDelete}
+          onBulkUpdate={handleBulkUpdate}
+          {...(meta.is_submittable === 1 ? { onBulkSubmit: handleBulkSubmit } : {})}
+          onImportClick={() => router.push(`/import/${encodeURIComponent(doctype)}`)}
+          refreshSignal={refreshSignal}
           {...(meta.is_submittable === 1 ? { onCancel: handleCancel } : {})}
           defaultView={viewParam}
           onViewChange={(v) => {

@@ -41,3 +41,4 @@ logs/
 # Local Claude instructions
 CLAUDE.md
 CLAUDE.community.md
+coverage/

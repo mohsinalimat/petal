@@ -1,11 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getRuntimeConfig } from "@/lib/config/runtime-config"
+import { backendFor } from "@/lib/config/tenants"
+import {
+  CSRF_PATH, EXACT_MAP, extractCsrfToken, rewritePrintHtml, stripCookieDomain, translatePath,
+} from "@/lib/frappe/proxy-paths"
 
-const FRAPPE_URL = (process.env.FRAPPE_BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "")
-const FRAPPE_SITE_HOST = new URL(FRAPPE_URL).hostname
-
-function getBackend(_req: NextRequest): { frappeUrl: string; frappeSiteHost: string } {
-  return { frappeUrl: FRAPPE_URL, frappeSiteHost: FRAPPE_SITE_HOST }
+/** Single-tenant backend, or the tenant's when PETAL_TENANTS is set (null = unknown host). */
+function getBackend(req: NextRequest): { frappeUrl: string; frappeSiteHost: string; pathMap?: Record<string, string> } | null {
+  const b = backendFor(req.headers, process.env)
+  if (!b) return null
+  return { frappeUrl: b.frappeUrl, frappeSiteHost: b.siteHost, ...(b.pathMap ? { pathMap: b.pathMap } : {}) }
 }
 
 const DROP_REQUEST_HEADERS = new Set([
@@ -14,43 +18,6 @@ const DROP_REQUEST_HEADERS = new Set([
 const DROP_RESPONSE_HEADERS = new Set([
   "connection", "transfer-encoding", "keep-alive",
 ])
-
-/**
- * Translates neutral Petal API paths → internal Frappe paths.
- * Nothing Frappe-specific ever appears in the browser's network tab.
- *
- * Neutral path scheme:
- *   auth/login           → api/method/login
- *   auth/logout          → api/method/logout
- *   auth/me              → api/method/frappe.auth.get_logged_user
- *   workspace/sidebar    → api/method/frappe.desk.desktop.get_workspace_sidebar_items
- *   doc/:doctype[/:name] → api/resource/:doctype[/:name]
- *   records/count        → api/method/frappe.client.get_count
- *   records/value        → api/method/frappe.client.get_value
- *   records/list         → api/method/frappe.client.get_list
- *   records/meta         → api/method/frappe.client.get_meta
- *   search/link          → api/method/frappe.desk.search.search_link
- *   reports/run          → api/method/frappe.desk.query_report.run
- *   upload               → api/method/upload_file
- *   exec/:method         → api/method/:method  (catch-all for callMethod())
- *   files/:rest          → files/:rest  (pass-through)
- */
-const EXACT_MAP: Record<string, string> = {
-  "auth/login": "api/method/login",
-  "auth/logout": "api/method/logout",
-  "auth/me": "api/method/frappe.auth.get_logged_user",
-  "auth/csrf": "api/method/accounting.accounting.api.accounting.get_csrf_token",
-  "auth/userinfo": "api/resource/User",
-  "workspace/sidebar": "api/method/frappe.desk.desktop.get_workspace_sidebar_items",
-  "workspace/page": "api/method/frappe.desk.desktop.get_desktop_page",
-  "records/count": "api/method/frappe.client.get_count",
-  "records/value": "api/method/frappe.client.get_value",
-  "records/list": "api/method/frappe.client.get_list",
-  "records/meta": "api/method/frappe.client.get_meta",
-  "search/link": "api/method/frappe.desk.search.search_link",
-  "reports/run": "api/method/frappe.desk.query_report.run",
-  "upload": "api/method/upload_file",
-}
 
 async function buildResponse(frappeRes: Response): Promise<NextResponse> {
   const resHeaders = new Headers()
@@ -67,40 +34,29 @@ async function buildResponse(frappeRes: Response): Promise<NextResponse> {
 
   resHeaders.delete("set-cookie")
   rawCookies.forEach((cookie) => {
-    resHeaders.append(
-      "Set-Cookie",
-      cookie
-        .replace(/;\s*domain=[^;]*/gi, "")
-        .replace(/;\s*samesite=[^;]*/gi, "")
-        .replace(/;\s*httponly/gi, ""),
-    )
+    // Only strip Domain: Frappe's cookie is scoped to its own origin, but the
+    // browser only ever talks to this proxy's origin, so a foreign Domain
+    // attribute would cause the browser to silently drop the cookie.
+    // HttpOnly/SameSite/Secure are preserved as Frappe set them.
+    resHeaders.append("Set-Cookie", stripCookieDomain(cookie))
   })
 
   const resBody = await frappeRes.arrayBuffer()
   return new NextResponse(resBody, { status: frappeRes.status, headers: resHeaders })
 }
 
-function getEffectivePathMap(_req: NextRequest): Record<string, string> {
+function getEffectivePathMap(req: NextRequest): Record<string, string> {
   const overrides = getRuntimeConfig().pathMap ?? {}
-  return { ...EXACT_MAP, ...overrides }
-}
-
-function translatePath(neutralPath: string, pathMap: Record<string, string>): string {
-  if (pathMap[neutralPath]) return pathMap[neutralPath]!
-
-  if (neutralPath.startsWith("doc/"))
-    return "api/resource/" + neutralPath.slice("doc/".length)
-
-  if (neutralPath.startsWith("files/")) return neutralPath
-
-  return neutralPath
+  return { ...EXACT_MAP, ...overrides, ...(getBackend(req)?.pathMap ?? {}) }
 }
 
 async function proxy(
   req: NextRequest,
   { params }: { params: { path: string[] } },
 ): Promise<NextResponse> {
-  const { frappeUrl, frappeSiteHost } = getBackend(req)
+  const backend = getBackend(req)
+  if (!backend) return NextResponse.json({ error: "Unknown tenant" }, { status: 404 })
+  const { frappeUrl, frappeSiteHost } = backend
   const neutralPath = params.path.join("/")
   const search = req.nextUrl.search
 
@@ -131,13 +87,7 @@ async function proxy(
         redirect: "manual",
         cache: "no-store",
       })
-      let html = await frappeRes.text()
-      html = html
-        .replace(/(href|src)="\/assets\//g, '$1="/api/v1/assets/')
-        .replace(/(href|src)="\/files\//g, '$1="/api/v1/files/')
-        .replace(/url\(\/assets\//g, 'url(/api/v1/assets/')
-        // Hide Frappe's built-in toolbar — we render our own
-        .replace('</body>', '<style>.print-toolbar,[data-html2canvas-ignore]{display:none!important}</style></body>')
+      const html = rewritePrintHtml(await frappeRes.text())
       return new NextResponse(html, {
         status: frappeRes.status,
         headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -155,6 +105,25 @@ async function proxy(
       return buildResponse(frappeRes)
     } catch {
       return new NextResponse(null, { status: 502 })
+    }
+  }
+
+  // auth/csrf — unless a pathMap entry names a method that returns the token,
+  // scrape it from the desk boot page, which every Frappe version renders.
+  if (neutralPath === CSRF_PATH && !getEffectivePathMap(req)[CSRF_PATH]) {
+    try {
+      const frappeRes = await fetch(`${frappeUrl}/app`, {
+        headers: { cookie: reqHeaders["cookie"] ?? "", host: frappeSiteHost, accept: "text/html" },
+        redirect: "manual",
+        cache: "no-store",
+      })
+      const token = frappeRes.ok ? extractCsrfToken(await frappeRes.text()) : null
+      return token
+        ? NextResponse.json({ message: token })
+        : NextResponse.json({ error: "No CSRF token — session is not logged in" }, { status: 401 })
+    } catch (err) {
+      console.error("[Petal Proxy] csrf fetch failed →", String(err))
+      return NextResponse.json({ error: "Request failed" }, { status: 502 })
     }
   }
 

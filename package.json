@@ -4,12 +4,27 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @petal/core dev",
-    "build": "pnpm --filter '@petal/*' build",
+    "build": "pnpm --filter './packages/*' build",
     "lint": "pnpm --filter '@petal/*' lint",
-    "typecheck": "pnpm --filter '@petal/*' typecheck",
-    "clean": "pnpm --filter '@petal/*' clean"
+    "typecheck": "pnpm --filter './packages/*' typecheck",
+    "clean": "pnpm --filter '@petal/*' clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "ci": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {
-    "typescript": "^5.4.5"
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@vitest/coverage-v8": "^2.1.9",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.4.5",
+    "vitest": "^2.1.9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

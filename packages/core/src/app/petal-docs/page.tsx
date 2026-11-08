@@ -410,7 +410,7 @@ NEXT_PUBLIC_FRONTEND_URL=https://petal.mycompany.com`} />
             </p>
 
             <Callout variant="info">
-              Multi-tenancy is opt-in and backward-compatible. If <Mono>PETAL_TENANTS</Mono> is not set, Petal runs in single-tenant mode using <Mono>FRAPPE_URL</Mono>, <Mono>PETAL_APPS</Mono>, and <Mono>PETAL_THEME</Mono> as before.
+              Multi-tenancy is opt-in and backward-compatible. If <Mono>PETAL_TENANTS</Mono> is not set, Petal runs in single-tenant mode using <Mono>FRAPPE_BACKEND_URL</Mono> and <Mono>PETAL_APPS</Mono> as before.
             </Callout>
 
             <h3 className="font-semibold text-foreground mt-8 mb-3">How it works</h3>
@@ -457,8 +457,7 @@ NEXT_PUBLIC_FRONTEND_URL=https://petal.mycompany.com`} />
         "version": "1.2.0",
         "url": "https://cdn.example.com/hr-portal/1.2.0/petal.hooks.js"
       }
-    ],
-    "theme": { "primaryColor": "#2563eb" }
+    ]
   },
   "beta.example.com": {
     "name": "Beta Inc",
@@ -470,8 +469,7 @@ NEXT_PUBLIC_FRONTEND_URL=https://petal.mycompany.com`} />
         "version": "0.9.0",
         "url": "https://cdn.example.com/inventory/0.9.0/petal.hooks.js"
       }
-    ],
-    "theme": { "primaryColor": "#dc2626" }
+    ]
   }
 }`} />
 
@@ -485,7 +483,7 @@ NEXT_PUBLIC_FRONTEND_URL=https://petal.mycompany.com`} />
     ports:
       - "3000:3000"
     env_file:
-      - .env.local    # contains PETAL_TENANTS (and no FRAPPE_URL/PETAL_APPS)
+      - .env.local    # contains PETAL_TENANTS (and no FRAPPE_BACKEND_URL/PETAL_APPS)
     restart: unless-stopped
 
   # Example: Caddy as a reverse proxy — routes both subdomains to Petal

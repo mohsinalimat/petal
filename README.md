@@ -13,16 +13,18 @@ Petal is an open-source alternative to Frappe Desk. It connects to any Frappe  b
 3. [Prerequisites](#prerequisites)
 4. [Quick Start](#quick-start)
 5. [Configuration](#configuration)
-6. [Custom App Development](#custom-app-development)
-7. [Hooks API Reference](#hooks-api-reference)
-8. [Styling & CSS](#styling--css)
-9. [CLI Reference](#cli-reference)
-10. [Deployment](#deployment)
-11. [Frappe Client API](#frappe-client-api)
-12. [Proxy API Reference](#proxy-api-reference)
-13. [Auth Configuration](#auth-configuration)
-14. [CORS & Frappe Backend Setup](#cors--frappe-backend-setup)
-15. [Troubleshooting](#troubleshooting)
+6. [Built-in Views & Tools](#built-in-views--tools)
+7. [Custom App Development](#custom-app-development)
+8. [Hooks API Reference](#hooks-api-reference)
+9. [Styling & CSS](#styling--css)
+10. [CLI Reference](#cli-reference)
+11. [Deployment](#deployment)
+12. [Frappe Client API](#frappe-client-api)
+13. [Proxy API Reference](#proxy-api-reference)
+14. [Auth Configuration](#auth-configuration)
+15. [CORS & Frappe Backend Setup](#cors--frappe-backend-setup)
+16. [Testing](#testing)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -172,7 +174,38 @@ NEXT_PUBLIC_APP_NAME=Petal
 NEXT_PUBLIC_APP_VERSION=1.0.0
 ```
 
+### Environment variables
+
+| Variable | Read at | Default | Purpose |
+|---|---|---|---|
+| `FRAPPE_BACKEND_URL` | runtime | `http://localhost:8000` | Frappe site the proxy talks to |
+| `FRAPPE_SITE_NAME` | runtime | backend hostname | Frappe site name (Host header + realtime namespace), if it differs from the hostname |
+| `PETAL_APPS` | runtime | — | JSON array of apps; used when `petal.apps.json` is absent, overrides `petal.config.ts` |
+| `PETAL_TENANTS` | runtime | — | JSON object keyed by hostname; enables multi-tenancy (see `/petal-docs#multi-tenancy`) |
+| `FRAPPE_SOCKETIO_URL` | build | backend host on `:9000` | Frappe realtime server, reached via the same-origin `/socket.io` rewrite |
+| `PETAL_REALTIME` | build | `1` | Set `0` to disable live updates |
+
+App list precedence: `petal.apps.json` → `PETAL_APPS` → `petal.config.ts`.
+
 ---
+
+## Built-in Views & Tools
+
+Every DocType gets these without any configuration. Views appear in the switcher only when the DocType has the fields they need.
+
+| Feature | Where | Notes |
+|---|---|---|
+| **Kanban** | `/kanban/:doctype?field=status` | Group by any Select or Link field. Drag cards (or use the per-card "Move to" menu on touch screens) — saves via `frappe.client.set_value`. Submitted docs can only move if the field is `allow_on_submit`. |
+| **Calendar** | `/calendar/:doctype?start=…&end=…` | Month grid on desktop, agenda list on phones. Click an empty day to create a record dated that day. |
+| **Gantt** | `/gantt/:doctype?start=…&end=…` | Needs two Date fields. Uses a Percent / `*progress*` field for progress bars when present. Zoomable. |
+| **CSV export** | List → ⋯ → Export | Exports the filtered list (up to 5,000 rows) or just the selected rows. Formula-leading cells are escaped. |
+| **CSV import** | List → ⋯ → Import, or `/import/:doctype` | Auto-maps columns, validates types/required fields before sending, inserts in batches of 50 and pinpoints failing rows. Update mode matches on an ID column. Parent fields only — use Frappe's Data Import for child tables. |
+| **Bulk edit / submit** | List → select rows → ⋯ | Sets one field on all selected records, or submits selected drafts, via `bulk_update.submit_cancel_or_update_docs`. Frappe queues batches over 20 in the background. |
+| **Activity** | Bottom of every saved form | Comments, field-level change history, emails, attachments (upload/remove) and assignments. |
+| **Workflow** | Form toolbar | When a DocType has an active Workflow, its state badge and the transitions *you* are allowed to take replace Submit/Cancel. |
+| **Amend** | Cancelled submittable docs | Opens a pre-filled draft linked by `amended_from`. Duplicate now skips `no_copy` fields. |
+| **Live updates** | Lists, boards, calendars, forms | Lists refresh when anyone saves a record. An open form reloads itself, or warns you if you have unsaved edits. Needs Frappe's socket.io server (`bench start` runs it on :9000). |
+| **API Playground** | `/developer` | Run whitelisted methods, `getDoc`, `getList` as yourself; copy a Petal client or curl snippet; request history. |
 
 ## Custom App Development
 
@@ -655,11 +688,17 @@ After each Vite rebuild, the CLI automatically pings `POST <shell-url>/__petal_h
 
 ### Docker / CI
 
-Apps defined in `petal.config.ts` are baked into `.petal/config.json` at startup by `withPetal()`. Apps registered via `petal app add` (`petal.apps.json`) are read at request time — no restart needed when they change. The only env var required is the backend URL:
-
-```env
-FRAPPE_BACKEND_URL=http://frappe:8000
+```bash
+docker build -t petal --build-arg FRAPPE_SOCKETIO_URL=http://frappe:9000 .
+docker run -p 3000:3000 \
+  -e FRAPPE_BACKEND_URL=http://frappe:8000 \
+  -e PETAL_APPS='[{"name":"billing-fe","version":"1.0.0","url":"https://cdn.example.com/billing-fe/petal.hooks.js"}]' \
+  petal
 ```
+
+Apps defined in `petal.config.ts` are baked into `.petal/config.json` at build time by `withPetal()`. Apps registered via `petal app add` (`petal.apps.json`) or `PETAL_APPS` are read at request time, and their origins are added to the CSP automatically. `.env.local` is excluded from the image — configure containers with runtime env vars (see [Environment variables](#environment-variables)).
+
+CI (`.github/workflows/ci.yml`) runs typecheck, unit tests with coverage, the production build, and a Docker build on every push and PR.
 
 `petal setup` generates a `docker-compose.yml` with `env_file: .env.local` wired up.
 
@@ -765,7 +804,7 @@ Returns the relative file URL from Frappe.
 
 The client fetches and caches the CSRF token from Frappe automatically after login via `initCSRF()`. The token is reset on each `login()` call and re-fetched. For non-GET requests, it is sent as `X-CSRF-Token` which the proxy translates to `X-Frappe-CSRF-Token`.
 
-For development setups where a custom CSRF endpoint is unavailable, add `"ignore_csrf": 1` to `site_config.json` (see [CORS & Frappe Backend Setup](#cors--frappe-backend-setup)).
+No backend setup is needed: unless `pathMap["auth/csrf"]` points at a method of your own, the proxy reads the token from Frappe's `/app` boot page for the logged-in session. See [CSRF setup](#2-csrf-setup) for alternatives.
 
 ### Request middleware
 
@@ -793,7 +832,7 @@ All browser requests go through `/api/v1/…`. The proxy translates neutral Peta
 | `auth/login` | `api/method/login` |
 | `auth/logout` | `api/method/logout` |
 | `auth/me` | `api/method/frappe.auth.get_logged_user` |
-| `auth/csrf` | `api/method/<your_app>.api.get_csrf_token` |
+| `auth/csrf` | token scraped from `/app` (or `pathMap["auth/csrf"]` if set) |
 | `auth/userinfo` | `api/resource/User` |
 | `workspace/sidebar` | `api/method/frappe.desk.desktop.get_workspace_sidebar_items` |
 | `workspace/page` | `api/method/frappe.desk.desktop.get_desktop_page` |
@@ -809,9 +848,9 @@ All browser requests go through `/api/v1/…`. The proxy translates neutral Peta
 | `files/:rest` | `files/:rest` (pass-through) |
 
 The proxy also:
-- Strips `domain=`, `samesite=`, and `httponly` from `Set-Cookie` headers so cookies work on localhost
+- Strips the `Domain` attribute from `Set-Cookie` headers so Frappe's cookies stick to the Petal origin (`HttpOnly`/`SameSite`/`Secure` are preserved)
 - Translates `X-CSRF-Token` → `X-Frappe-CSRF-Token`
-- Supports multi-tenant routing via `PETAL_TENANTS` env var
+- Routes each hostname to its own backend when `PETAL_TENANTS` is set (unknown hosts get 404)
 
 **Overriding or extending the path map** — add `pathMap` to `petal.config.ts`. Your entries are merged over the built-in table and take priority:
 
@@ -908,7 +947,9 @@ For production, set `allow_cors` to your deployed Petal URL (e.g. `https://app.e
 
 Frappe validates a CSRF token on all non-GET requests. Petal fetches and caches this token automatically via `initCSRF()` after login.
 
-**Option A — expose a CSRF endpoint (recommended for production)**
+**Default — nothing to configure.** The proxy fetches `/app` with the user's session cookie and reads `frappe.csrf_token` from the page. This works on any Frappe site.
+
+**Option A — expose a CSRF endpoint (saves one HTML fetch per login)**
 
 Add a whitelisted method to your Frappe app:
 
@@ -964,6 +1005,17 @@ Successful boot in browser console:
 ```
 
 ---
+
+## Testing
+
+```bash
+pnpm test            # all unit tests (Vitest)
+pnpm test:watch      # watch mode
+pnpm test:coverage   # with V8 coverage → coverage/
+pnpm ci              # typecheck + tests, as CI runs them
+```
+
+Tests live next to the code as `*.test.ts` (Node) and `*.test.tsx` (jsdom + Testing Library). Pure logic — CSV, import mapping, kanban/calendar/gantt geometry, timeline, the Frappe client, proxy paths, tenants, realtime — sits in `lib/` modules so it can be tested without a Frappe server.
 
 ## Troubleshooting
 

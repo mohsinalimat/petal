@@ -1,6 +1,10 @@
 import fs from "fs"
 import path from "path"
 import type { PetalConfig, PetalAppMeta } from "@petal/sdk"
+import { parseAppsEnv } from "./env-config"
+import { backendFor } from "./tenants"
+
+export { appOrigins, parseAppsEnv } from "./env-config"
 
 type StoredConfig = {
   apps: NonNullable<PetalConfig["apps"]>
@@ -39,11 +43,28 @@ function loadAppsJson(): PetalAppMeta[] | null {
   return parsed as PetalAppMeta[]
 }
 
+/** App list precedence: petal.apps.json (CLI-managed) → PETAL_APPS env → petal.config.ts. */
 export function getRuntimeConfig(): PetalConfig {
   const { apps: staticApps, pathMap } = loadStaticConfig()
-  const dynamicApps = loadAppsJson()
+  const dynamicApps = loadAppsJson() ?? parseAppsEnv(process.env.PETAL_APPS)
   return {
     apps: dynamicApps ?? staticApps,
     ...(pathMap ? { pathMap } : {}),
+  }
+}
+
+/**
+ * Config for one request. In multi-tenant mode (PETAL_TENANTS set) the tenant's
+ * apps and pathMap win; returns null for a hostname that isn't a known tenant.
+ */
+export function getRequestConfig(headers: { get(name: string): string | null }): (PetalConfig & { site: string }) | null {
+  const backend = backendFor(headers, process.env)
+  if (!backend) return null
+  const base = getRuntimeConfig()
+  const pathMap = { ...(base.pathMap ?? {}), ...(backend.pathMap ?? {}) }
+  return {
+    apps: backend.apps ?? base.apps ?? [],
+    ...(Object.keys(pathMap).length ? { pathMap } : {}),
+    site: backend.siteHost,
   }
 }

@@ -1,4 +1,5 @@
 import type { PetalAppMeta, PetalConfig, PetalHooks } from "@petal/sdk"
+import { mergeFormSlots } from "./compose-slots"
 
 const isDev = process.env.NODE_ENV === "development"
 
@@ -7,7 +8,7 @@ interface RegisteredApp {
   hooks: PetalHooks
 }
 
-class AppRegistry {
+export class AppRegistry {
   private apps: Map<string, RegisteredApp> = new Map()
   private failedApps: Map<string, string> = new Map() // name → error message
 
@@ -144,7 +145,7 @@ class AppRegistry {
 
     if (Object.keys(mergedFormSlots).length > 0) {
       merged.form_slots = Object.fromEntries(
-        Object.entries(mergedFormSlots).map(([dt, slots]) => [dt, slots[0]!])
+        Object.entries(mergedFormSlots).map(([dt, slots]) => [dt, mergeFormSlots(slots)])
       )
     }
 
