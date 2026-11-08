@@ -177,3 +177,28 @@ describe("auth", () => {
     expect(await c.getLoggedInUser()).toMatchObject({ name: "a@x.com", roles: ["System Manager"] })
   })
 })
+
+describe("waitFor gate", () => {
+  it("holds requests until the gate settles, then applies config set in the meantime", async () => {
+    const c = new FrappeClient("/api/v1")
+    let release!: () => void
+    const ready = new Promise<void>((r) => { release = r })
+    c.waitFor(ready)
+    responses.push(json({ message: 1 }))
+    const pending = c.callMethod("a.b")
+    await Promise.resolve()
+    expect(calls).toHaveLength(0)
+    c.applyConfig({ beforeRequest: async (o) => ({ ...o, headers: { ...(o.headers as Record<string, string>), "X-App": "billing" } }) })
+    release()
+    await pending
+    expect(calls).toHaveLength(1)
+    expect(header(0, "X-App")).toBe("billing")
+  })
+
+  it("releases requests even when the gate rejects", async () => {
+    const c = new FrappeClient("/api/v1")
+    c.waitFor(Promise.reject(new Error("apps failed")))
+    responses.push(json({ message: 2 }))
+    await expect(c.callMethod("a.b")).resolves.toBe(2)
+  })
+})

@@ -9,6 +9,7 @@ import Link from "next/link"
 import { useRealtimeList } from "@/hooks/useRealtime"
 import { DoctypeViewHeader } from "@/components/views/DoctypeViewHeader"
 import type { DocTypeMeta } from "@/app/form/[doctype]/[name]/components/types"
+import { PageLoader } from "@/components/shell/PageLoader"
 
 // ---------------------------------------------------------------------------
 // Page wrapper
@@ -182,12 +183,7 @@ export default function ListPage() {
       />
 
       {OverrideComponent ? (
-        <Suspense fallback={
-          <div className="flex items-center gap-2 text-sm text-muted-foreground p-8">
-            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            Loading custom view...
-          </div>
-        }>
+        <Suspense fallback={<PageLoader label="Loading custom view…" />}>
           <OverrideComponent filters={{}} />
         </Suspense>
       ) : meta ? (

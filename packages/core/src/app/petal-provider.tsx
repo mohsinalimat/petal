@@ -25,107 +25,115 @@ export function PetalProvider({ children }: { children: React.ReactNode }) {
   const bootDoneRef = useRef(false)
 
 
+  // Boot runs independent tracks in parallel so the shell paints as soon as
+  // the session is known:
+  //   1. /api/config + apps    → on_init, client config (overrides.frappeClient), theme
+  //   2. auth check            → authStatus (gates the shell). A session restored
+  //      from storage needs no request, so the shell paints immediately.
+  //   3. Frappe sidebar        → plain fetch (not FrappeClient), starts right after auth
+  // Every FrappeClient request — boot, settings, and page data alike — is held by
+  // client.waitFor() until track 1 has applied the apps' client config.
+  const [appsLoaded, setAppsLoaded] = useState(false)
+  const [frappeSidebar, setFrappeSidebar] = useState<import("@petal/sdk").SidebarItem[] | null>(null)
+
   useEffect(() => {
-    async function init() {
-      registerBuiltinIcons()
+    registerBuiltinIcons()
+    const client = getFrappeClient()
 
-      const config: import("@petal/sdk").PetalConfig = await fetch("/api/config").then((r) => r.json())
+    const appsReady = (async () => {
+      try {
+        const config: import("@petal/sdk").PetalConfig = await fetch("/api/config").then((r) => r.json())
+        await appRegistry.loadFromConfig(config)
+        client.applyConfig(appRegistry.getMergedFrappeClientConfig())
+        setAppTheme(appRegistry.getMergedTheme())
+        setSettings({ ...appRegistry.getMergedSettings(), ...usePetalStore.getState().settings })
+      } catch (e) {
+        console.error("[Petal] Could not load app config:", e)
+      } finally {
+        setAppsLoaded(true)
+      }
+    })()
+    client.waitFor(appsReady)
 
-      await appRegistry.loadFromConfig(config)
-      console.log("[Petal] Loaded apps:", (config.apps ?? []).map((a) => a.name))
-
-
-      const mergedTheme = appRegistry.getMergedTheme()
-      const mergedFrappeConfig = appRegistry.getMergedFrappeClientConfig()
-      const mergedSettings = appRegistry.getMergedSettings()
-
-      const client = getFrappeClient()
-      client.applyConfig(mergedFrappeConfig)
-
-      setAppTheme(mergedTheme)
-      setSettings(mergedSettings)
-
+    void (async () => {
       try {
         if (user) {
           setAuthStatus("authenticated")
-          void client.initCSRF()
         } else {
           const freshUser = await client.getLoggedInUser()
           setUser(freshUser)
-          void client.initCSRF()
           setAuthStatus("authenticated")
         }
+        void client.initCSRF()
       } catch {
         setAuthStatus("unauthenticated")
       }
-    }
-    init().catch(console.error)
-  }, [setUser, setAuthStatus, setHooks, setAppTheme, setSettings])
+    })()
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setUser, setAuthStatus, setAppTheme, setSettings])
+
+  // Sidebar uses plain fetch (no FrappeClient overrides), so it can start right after auth.
   useEffect(() => {
     if (authStatus !== "authenticated") return
+    void fetchFrappeSidebarItems().then(setFrappeSidebar)
+  }, [authStatus])
+
+  // Settings go through FrappeClient (held by client.waitFor until app config is applied).
+  useEffect(() => {
+    if (authStatus !== "authenticated") return
+    const client = getFrappeClient()
+    void Promise.all([
+      client.getDoc<FrappeDocument & { currency?: string }>("System Settings", "System Settings").catch(() => null),
+      client.getDoc<FrappeDocument & { default_company?: string }>("Global Defaults", "Global Defaults").catch(() => null),
+      client.getList<FrappeDocument & { name: string }>({
+        doctype: "Fiscal Year",
+        fields: ["name"],
+        order_by: "year_start_date desc",
+        limit: 1,
+      }).catch(() => [] as (FrappeDocument & { name: string })[]),
+    ]).then(([sysSettings, globalDefaults, years]) => {
+      const merged: Record<string, unknown> = { ...usePetalStore.getState().settings }
+      if (sysSettings?.currency) merged.currency = sysSettings.currency
+      if (globalDefaults?.default_company) merged.defaultCompany = globalDefaults.default_company
+      if (years.length > 0 && years[0]) merged.defaultFiscalYear = years[0].name
+      setSettings(merged)
+    })
+  }, [authStatus, setSettings])
+
+  // App on_boot hooks need both a session and loaded apps.
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !appsLoaded) return
     if (bootDoneRef.current) return
     bootDoneRef.current = true
-
-    async function boot() {
+    void (async () => {
       try {
         await appRegistry.runBootHooks()
       } catch (e) {
         console.error("[Petal] Boot hook failed:", e)
       }
-      const mergedHooks = appRegistry.getMergedHooks()
-      setHooks(mergedHooks)
-      const frappeItems = await fetchFrappeSidebarItems()
+      setHooks(appRegistry.getMergedHooks())
+    })()
+  }, [authStatus, appsLoaded, setHooks])
 
-      const overrides = mergedHooks.sidebar_item_overrides ?? {}
-      type SI = import("@petal/sdk").SidebarItem
-      function applyOverrides(items: SI[]): SI[] {
-        return items.map((item) => {
-          const ov = overrides[item.label] ?? overrides[item.path]
-          const patched: SI = ov ? { ...item, ...ov } : item
-          if (patched.children?.length) return { ...patched, children: applyOverrides(patched.children) }
-          return patched
-        })
-      }
-
-      const combined = applyOverrides([
-        ...frappeItems,
-        ...(mergedHooks.sidebar_items ?? []),
-      ]).filter((item) => !item.hidden)
-
-      setSidebarItems(combined)
-
-      try {
-        const client = getFrappeClient()
-        const [sysSettings, globalDefaults, fiscalYears] = await Promise.all([
-          client.getDoc<FrappeDocument & { currency?: string }>("System Settings", "System Settings"),
-          client.getDoc<FrappeDocument & { default_company?: string }>("Global Defaults", "Global Defaults").catch(() => null),
-          client.getList<FrappeDocument & { name: string }>({
-            doctype: "Fiscal Year",
-            fields: ["name"],
-            order_by: "year_start_date desc",
-            limit: 1,
-          }).catch(() => [] as (FrappeDocument & { name: string })[]),
-        ])
-        const current = usePetalStore.getState().settings
-        const merged: Record<string, unknown> = { ...current }
-        if (sysSettings.currency) merged.currency = sysSettings.currency
-        if (globalDefaults?.default_company) merged.defaultCompany = globalDefaults.default_company
-        // if ((fiscalYears as (FrappeDocument & { name: string })[]).length > 0) {
-        //   merged.defaultFiscalYear = (fiscalYears as (FrappeDocument & { name: string })[])[0].name
-        // }
-        const years = fiscalYears as (FrappeDocument & { name: string })[]
-
-        if (years.length > 0 && years[0]) {
-          merged.defaultFiscalYear = years[0].name
-        }
-        setSettings(merged)
-      } catch {
-        // Leave whatever defaults were set from app config
-      }
+  // Sidebar = Frappe workspaces + app items, re-merged whenever either arrives.
+  const hooks = usePetalStore((s) => s.hooks)
+  useEffect(() => {
+    if (!frappeSidebar) return
+    type SI = import("@petal/sdk").SidebarItem
+    const overrides = hooks.sidebar_item_overrides ?? {}
+    function applyOverrides(items: SI[]): SI[] {
+      return items.map((item) => {
+        const ov = overrides[item.label] ?? overrides[item.path]
+        const patched: SI = ov ? { ...item, ...ov } : item
+        if (patched.children?.length) return { ...patched, children: applyOverrides(patched.children) }
+        return patched
+      })
     }
-    boot().catch(console.error)
-  }, [authStatus, setHooks, setSidebarItems])
+    setSidebarItems(
+      applyOverrides([...frappeSidebar, ...(hooks.sidebar_items ?? [])]).filter((item) => !item.hidden),
+    )
+  }, [frappeSidebar, hooks, setSidebarItems])
 
   useEffect(() => {
     if (authStatus === "unauthenticated" && pathname !== "/login" && pathname !== "/petal-docs") {

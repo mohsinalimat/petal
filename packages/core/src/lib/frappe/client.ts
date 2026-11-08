@@ -27,6 +27,8 @@ export class FrappeClient {
   private inflight = new Map<string, Promise<unknown>>()
   private csrfToken: string | null = null
   private csrfFetchPromise: Promise<void> | null = null
+  /** Requests wait on this before sending, so config applied later (app overrides) still covers them. */
+  private gate: Promise<unknown> | null = null
 
   constructor(baseUrl: string, config?: FrappeClientConfig) {
     this.baseUrl = baseUrl.replace(/\/$/, "")
@@ -35,6 +37,17 @@ export class FrappeClient {
 
   applyConfig(config: FrappeClientConfig): void {
     this.config = { ...this.config, ...config }
+  }
+
+  /**
+   * Hold every request until `ready` settles (resolved or rejected), e.g.
+   * until custom apps have loaded and their `overrides.frappeClient` has been
+   * applied. Lets the UI render early without requests escaping the config.
+   */
+  waitFor(ready: Promise<unknown>): void {
+    const settled = ready.then(() => undefined, () => undefined)
+    this.gate = settled
+    void settled.then(() => { if (this.gate === settled) this.gate = null })
   }
 
   /** Remove all cache entries whose key contains `pattern`. */
@@ -70,6 +83,7 @@ export class FrappeClient {
   }
 
   private async _doFetch<T>(path: string, options: RequestInit | undefined, cacheKey: string | null): Promise<T> {
+    if (this.gate) await this.gate
     const method = (options?.method ?? "GET").toUpperCase()
 
     const headers: Record<string, string> = {

@@ -67,10 +67,16 @@ const nextConfig = {
   },
   // Next's default 308 from "/socket.io/" → "/socket.io" would break the polling transport
   skipTrailingSlashRedirect: true,
-  webpack: (config) => {
-    config.watchOptions = {
-      poll: 1000,
-      aggregateTimeout: 300,
+  // Only modules each page actually uses are bundled from these barrels
+  // (@petal/ui re-exports recharts-based charts that most pages never render).
+  experimental: {
+    optimizePackageImports: ["@petal/ui", "lucide-react"],
+  },
+  webpack: (config, { dev }) => {
+    // Polling burns a full CPU core and triggers spurious recompiles; it's only
+    // needed when native file events don't work (e.g. Docker bind mounts).
+    if (dev && process.env.PETAL_WATCH_POLL === "1") {
+      config.watchOptions = { poll: 1000, aggregateTimeout: 300 }
     }
     return config
   },

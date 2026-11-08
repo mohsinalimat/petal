@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "ci": "pnpm typecheck && pnpm test"
+    "ci": "pnpm typecheck && pnpm test",
+    "start": "pnpm --filter @petal/core build && pnpm --filter @petal/core start"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
