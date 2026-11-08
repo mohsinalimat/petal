@@ -5,14 +5,17 @@ import { usePetalStore } from "@/store/petal-store"
 import { useFrappe, getFrappeClient } from "@/hooks/useFrappe"
 import type { FrappeDocument } from "@petal/sdk"
 import { parseLayout } from "./components/parseLayout"
-import { fmtValue } from "./components/fmtValue"
 import { SectionBlock } from "./components/SectionBlock"
 import { MoreActionsDropdown } from "./components/MoreActionsDropdown"
 import { PrintModal } from "./components/PrintModal"
-import { DeleteConfirmDialog, DocStatusBadge } from "@petal/ui"
+import { DeleteConfirmDialog, DocStatusBadge, FieldValue } from "@petal/ui"
 import { ToastList, playChime } from "./components/Toast"
 import type { Toast } from "./components/Toast"
 import type { DocTypeMeta, MetaField } from "./components/types"
+import { WorkflowActions } from "./components/WorkflowActions"
+import { DocActivity } from "./components/DocActivity"
+import { useRealtimeDoc } from "@/hooks/useRealtime"
+import { buildAmendment, computeDefaults, missingRequired, prefillKey, stripForCopy } from "@/lib/doc/doc-utils"
 
 export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctype: string; name: string; onIsSingle?: (v: boolean) => void; toolbarSlot?: React.ReactNode }) {
   const frappe        = useFrappe()
@@ -46,6 +49,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const hiddenPasteRef                      = useRef<HTMLTextAreaElement>(null)
   const imageInputRef                       = useRef<HTMLInputElement>(null)
   const [imageUploading, setImageUploading] = useState(false)
+  const [activitySignal, setActivitySignal] = useState(0)
+  /** Set when another user saves this doc while it has unsaved local edits. */
+  const [remoteChange, setRemoteChange]     = useState<string | null>(null)
 
   function addToast(type: Toast["type"], message: string) {
     const id = ++toastIdRef.current
@@ -71,10 +77,6 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       if (imageInputRef.current) imageInputRef.current.value = ""
     }
   }
-
-  useEffect(() => {
-    console.log("Form meta changed:", meta)
-  }, [meta])
 
   async function searchLink(
     doctype: string,
@@ -114,31 +116,12 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
         if (docRes) {
           setValues(docRes as Record<string, unknown>)
         } else if (m) {
-          const defs: Record<string, unknown> = {}
-          for (const f of m.fields) {
-            const def = f.default
-            if (def == null || def === "") continue
-            if (typeof def !== "string") {
-              defs[f.fieldname] = def
-            } else if ((f.fieldtype === "Date" || f.fieldtype === "Datetime") && def === "Today") {
-              const n = new Date()
-              const yyyy = n.getFullYear()
-              const mm   = String(n.getMonth() + 1).padStart(2, "0")
-              const dd   = String(n.getDate()).padStart(2, "0")
-              defs[f.fieldname] = `${yyyy}-${mm}-${dd}`
-            } else if (def === "__user" || def === "eval:frappe.session.user") {
-              if (user) defs[f.fieldname] = user.name
-            } else if (def === "__last" || def.startsWith("eval:")) {
-              // skip — can't resolve dynamic expressions client-side
-            } else {
-              defs[f.fieldname] = def
-            }
-          }
+          const defs = computeDefaults(m.fields, { user: user?.name ?? null })
           if (focusField && focusValue) defs[focusField] = focusValue
 
           // Merge values pre-filled by Quick Entry's "Edit Full Form" action
           try {
-            const qeKey = `petal_quick_entry_${doctype}`
+            const qeKey = prefillKey(doctype)
             const qeStored = sessionStorage.getItem(qeKey)
             if (qeStored) {
               sessionStorage.removeItem(qeKey)
@@ -242,15 +225,40 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
     return 0
   }
 
+  /** Re-fetch the saved document (after a remote change or workflow action). */
+  async function reloadDoc() {
+    if (isNew) return
+    frappe.invalidate(doctype)
+    try {
+      const fresh = await frappe.getDoc<FrappeDocument>(doctype, name)
+      setValues(fresh as Record<string, unknown>)
+      setIsDirty(false)
+      setRemoteChange(null)
+      setActivitySignal((n) => n + 1)
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Could not reload document")
+    }
+  }
+
+  const isDirtyRef = useRef(isDirty)
+  useEffect(() => { isDirtyRef.current = isDirty }, [isDirty])
+  const modifiedRef = useRef<unknown>(null)
+  useEffect(() => { modifiedRef.current = values.modified }, [values.modified])
+
+  useRealtimeDoc(doctype, name, (p) => {
+    // Ignore our own saves (already applied) and stale/duplicate events
+    if (p.modified && p.modified === modifiedRef.current) return
+    if (savingRef.current) return
+    if (isEditingRef.current && isDirtyRef.current) {
+      setRemoteChange(p.user ? `${p.user} saved a newer version of this document.` : "This document was changed by someone else.")
+    } else {
+      void reloadDoc()
+    }
+  })
+
   async function handleSave() {
     if (meta) {
-      const missing = meta.fields
-        .filter((f) =>
-          f.reqd === 1 &&
-          !fieldBehaviors[f.fieldname]?.hidden &&
-          (values[f.fieldname] === "" || values[f.fieldname] == null)
-        )
-        .map((f) => f.fieldname)
+      const missing = missingRequired(meta.fields, values, fieldBehaviors)
 
       if (missing.length > 0) {
         setMissingFields(new Set(missing))
@@ -272,7 +280,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       const payload = { doctype, ...(isNew ? {} : { name }), ...values } as Partial<FrappeDocument> & { doctype: string }
       const saved = await frappe.saveDoc(payload)
       setValues(saved as Record<string, unknown>)
-      setIsDirty(false); setIsEditing(false)
+      setIsDirty(false); setIsEditing(false); setRemoteChange(null)
+      setActivitySignal((n) => n + 1)
       addToast("success", isNew ? `${doctype} created` : "Document saved")
       if (isNew && saved.name) {
         if (returnTo && returnField) {
@@ -291,8 +300,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   async function handleSubmit() {
     setSaving(true); setError(null)
     try {
-      await frappe.callMethod("frappe.client.submit", { doc: { ...values, doctype, name } })
-      setValues((p) => ({ ...p, docstatus: 1 })); setIsEditing(false)
+      const submitted = await frappe.callMethod<Record<string, unknown>>("frappe.client.submit", { doc: { ...values, doctype, name } })
+      setValues((p) => ({ ...p, ...(submitted && typeof submitted === "object" ? submitted : {}), docstatus: 1 })); setIsEditing(false)
+      frappe.invalidate(doctype); setActivitySignal((n) => n + 1)
       addToast("success", "Document submitted")
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Submit failed.")
@@ -304,6 +314,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
     try {
       await frappe.callMethod("frappe.client.cancel", { doctype, name })
       setValues((p) => ({ ...p, docstatus: 2 })); setIsEditing(false)
+      frappe.invalidate(doctype); setActivitySignal((n) => n + 1)
       addToast("success", "Document cancelled")
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Cancel failed.")
@@ -313,22 +324,29 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   async function handleDuplicate() {
     setSaving(true); setError(null)
     try {
-      const STRIP = new Set(["name", "docstatus", "creation", "modified", "modified_by", "owner", "amended_from", "__islocal"])
-      function stripRow(obj: Record<string, unknown>): Record<string, unknown> {
-        return Object.fromEntries(Object.entries(obj).filter(([k]) => !STRIP.has(k)))
-      }
-      const duped = stripRow(values)
-      for (const key of Object.keys(duped)) {
-        if (Array.isArray(duped[key])) {
-          duped[key] = (duped[key] as Record<string, unknown>[]).map(stripRow)
-        }
-      }
+      const duped = stripForCopy(values, meta?.fields ?? [])
       const saved = await frappe.saveDoc({ doctype, ...duped } as Partial<FrappeDocument> & { doctype: string })
       router.push(`/form/${encodeURIComponent(doctype)}/${encodeURIComponent(String(saved.name))}`)
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Duplicate failed.")
       setSaving(false)
     }
+  }
+
+  /** Open a new draft pre-filled from this cancelled doc, linked via amended_from. */
+  function handleAmend() {
+    try {
+      sessionStorage.setItem(prefillKey(doctype), JSON.stringify(buildAmendment(values, name, meta?.fields ?? [])))
+    } catch {}
+    router.push(`/form/${encodeURIComponent(doctype)}/new`)
+  }
+
+  function handleWorkflowApplied(updated: Record<string, unknown>, action: string) {
+    setValues((p) => ({ ...p, ...updated }))
+    setIsDirty(false); setIsEditing(false)
+    frappe.invalidate(doctype)
+    setActivitySignal((n) => n + 1)
+    addToast("success", `${action} applied`)
   }
 
   function handleCopyJSON() {
@@ -441,6 +459,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
 
   const docstatus     = Number(values.docstatus ?? 0)
   const isSubmittable = (meta?.is_submittable ?? 0) === 1
+  const workflow      = meta?.__workflow_docs?.find((w) => w.is_active !== 0)
+  const workflowField = workflow ? (workflow.workflow_state_field || "workflow_state") : null
   const canDelete     = !isNew && (!isSubmittable || docstatus !== 1)
   const titleField    = meta?.title_field
   const docTitle      = (titleField && values[titleField]) ? String(values[titleField]) : (isNew ? `New ${doctype}` : name)
@@ -585,7 +605,16 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
                   <kbd className="hidden sm:inline text-[10px] font-mono bg-muted/80 text-muted-foreground px-1 py-0.5 rounded border border-border/60 leading-none">⌘E</kbd>
                 </button>
               )}
-              {isSubmittable && docstatus === 0 && !isNew && (
+              {workflowField && !isNew && (
+                <WorkflowActions
+                  doc={{ ...values, doctype, name }}
+                  stateField={workflowField}
+                  disabled={saving || isDirty}
+                  onApplied={handleWorkflowApplied}
+                  onError={(m) => addToast("error", m)}
+                />
+              )}
+              {isSubmittable && !workflowField && docstatus === 0 && !isNew && (
                 <button
                   onClick={handleSubmit}
                   disabled={saving}
@@ -594,7 +623,17 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
                   Submit
                 </button>
               )}
-              {isSubmittable && docstatus === 1 && (
+              {isSubmittable && docstatus === 2 && (
+                <button
+                  onClick={handleAmend}
+                  disabled={saving}
+                  title="Create an amended copy of this cancelled document"
+                  className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+                >
+                  Amend
+                </button>
+              )}
+              {isSubmittable && !workflowField && docstatus === 1 && (
                 <button
                   onClick={handleCancel}
                   disabled={saving}
@@ -617,6 +656,15 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
           )}
         </div>
       </div>
+
+      {remoteChange && (
+        <div role="status" className="mb-4 flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-300">
+          <span className="flex-1">{remoteChange} Saving now may overwrite their changes.</span>
+          <button type="button" onClick={() => void reloadDoc()} className="h-7 px-3 rounded-md border border-amber-300 dark:border-amber-700 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40">
+            Discard mine &amp; reload
+          </button>
+        </div>
+      )}
 
       {/* ── Main form area ─────────────────────────── */}
       <div className="space-y-6">
@@ -671,9 +719,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border/40">
                 {[
-                  { label: "Created",     value: fmtValue(values.creation, "Datetime") },
+                  { label: "Created",     value: <FieldValue value={values.creation} fieldtype="Datetime" /> },
                   { label: "Owner",       value: String(values.owner ?? "—") },
-                  { label: "Modified",    value: fmtValue(values.modified, "Datetime") },
+                  { label: "Modified",    value: <FieldValue value={values.modified} fieldtype="Datetime" /> },
                   { label: "Modified by", value: String((values as Record<string, unknown>).modified_by ?? "—") },
                 ].map((m) => (
                   <div key={m.label} className="px-3 sm:px-5 py-3 space-y-0.5">
@@ -685,6 +733,16 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
             </div>
           )}
         </div>
+
+      {!isNew && meta && meta.issingle !== 1 && (
+        <DocActivity
+          doctype={doctype}
+          name={name}
+          doc={values}
+          fields={meta.fields}
+          reloadSignal={activitySignal}
+        />
+      )}
 
       {/* ── Delete confirm ──────────────────────────── */}
       <DeleteConfirmDialog

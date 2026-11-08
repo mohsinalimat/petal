@@ -15,6 +15,8 @@ interface AuthSlice {
 
 interface HooksSlice {
   hooks: PetalHooks
+  /** True once custom apps have loaded and their on_boot hooks ran. */
+  hooksReady: boolean
   sidebarItems: SidebarItem[]
   setHooks: (hooks: PetalHooks) => void
   setSidebarItems: (items: SidebarItem[]) => void
@@ -53,8 +55,9 @@ function createAuthSlice(set: (fn: (s: PetalState) => Partial<PetalState>) => vo
 function createHooksSlice(set: (fn: (s: PetalState) => Partial<PetalState>) => void): HooksSlice {
   return {
     hooks: {},
+    hooksReady: false,
     sidebarItems: [],
-    setHooks: (hooks) => set(() => ({ hooks })),
+    setHooks: (hooks) => set(() => ({ hooks, hooksReady: true })),
     setSidebarItems: (sidebarItems) => set(() => ({ sidebarItems })),
   }
 }

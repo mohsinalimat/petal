@@ -3,6 +3,17 @@ import { FrappeAPI } from "@/lib/frappe/api-config"
 
 const DEFAULT_TTL_MS = 30_000 // 30 seconds
 
+export type WorkflowTransition = {
+  action: string
+  next_state: string
+  state?: string
+  allowed?: string
+  allow_self_approval?: 0 | 1
+}
+
+/** Shape of frappe.desk.form.load.get_docinfo — see @petal/ui DocInfo for the fields Petal renders. */
+export type DocInfoResponse = Record<string, unknown>
+
 interface CacheEntry {
   data: unknown
   expiresAt: number
@@ -16,6 +27,8 @@ export class FrappeClient {
   private inflight = new Map<string, Promise<unknown>>()
   private csrfToken: string | null = null
   private csrfFetchPromise: Promise<void> | null = null
+  /** Requests wait on this before sending, so config applied later (app overrides) still covers them. */
+  private gate: Promise<unknown> | null = null
 
   constructor(baseUrl: string, config?: FrappeClientConfig) {
     this.baseUrl = baseUrl.replace(/\/$/, "")
@@ -24,6 +37,17 @@ export class FrappeClient {
 
   applyConfig(config: FrappeClientConfig): void {
     this.config = { ...this.config, ...config }
+  }
+
+  /**
+   * Hold every request until `ready` settles (resolved or rejected), e.g.
+   * until custom apps have loaded and their `overrides.frappeClient` has been
+   * applied. Lets the UI render early without requests escaping the config.
+   */
+  waitFor(ready: Promise<unknown>): void {
+    const settled = ready.then(() => undefined, () => undefined)
+    this.gate = settled
+    void settled.then(() => { if (this.gate === settled) this.gate = null })
   }
 
   /** Remove all cache entries whose key contains `pattern`. */
@@ -59,6 +83,7 @@ export class FrappeClient {
   }
 
   private async _doFetch<T>(path: string, options: RequestInit | undefined, cacheKey: string | null): Promise<T> {
+    if (this.gate) await this.gate
     const method = (options?.method ?? "GET").toUpperCase()
 
     const headers: Record<string, string> = {
@@ -263,6 +288,84 @@ export class FrappeClient {
     this.inflight.set(cacheKey, promise)
     void promise.finally(() => this.inflight.delete(cacheKey)).catch(() => {})
     return promise
+  }
+
+  /** Set one or more fields on a saved document without loading/saving the full doc. */
+  async setValue<T extends FrappeDocument>(doctype: string, name: string, values: Record<string, unknown>): Promise<T> {
+    const result = await this.callMethod<T>("frappe.client.set_value", { doctype, name, fieldname: values })
+    this.invalidate(doctype)
+    return result
+  }
+
+  /** Comments, versions, attachments, assignments and activity logs for a document. */
+  async getDocInfo(doctype: string, name: string): Promise<DocInfoResponse> {
+    // get_docinfo writes to frappe.response["docinfo"] rather than returning a value
+    const res = await this.callMethod<Record<string, unknown>>("frappe.desk.form.load.get_docinfo", { doctype, name })
+    return ((res?.docinfo ?? res) ?? {}) as DocInfoResponse
+  }
+
+  async addComment(doctype: string, name: string, html: string, user: { email: string; fullName: string }): Promise<void> {
+    await this.callMethod("frappe.desk.form.utils.add_comment", {
+      reference_doctype: doctype,
+      reference_name: name,
+      content: html,
+      comment_email: user.email,
+      comment_by: user.fullName,
+    })
+  }
+
+  async deleteComment(commentName: string): Promise<void> {
+    await this.callMethod("frappe.client.delete", { doctype: "Comment", name: commentName })
+  }
+
+  async assign(doctype: string, name: string, users: string[]): Promise<void> {
+    await this.callMethod("frappe.desk.form.assign_to.add", { doctype, name, assign_to: JSON.stringify(users) })
+  }
+
+  async unassign(doctype: string, name: string, user: string): Promise<void> {
+    await this.callMethod("frappe.desk.form.assign_to.remove", { doctype, name, assign_to: user })
+  }
+
+  async removeAttachment(doctype: string, name: string, fileId: string): Promise<void> {
+    await this.callMethod("frappe.desk.form.utils.remove_attach", { fid: fileId, dt: doctype, dn: name })
+  }
+
+  /**
+   * Bulk update / submit / cancel. Frappe runs ≤20 docs inline and queues larger
+   * batches as a background job, so a large batch may still be in flight when this resolves.
+   * Returns the names that failed (inline runs only).
+   */
+  async bulkAction(
+    doctype: string,
+    names: string[],
+    action: "update" | "submit" | "cancel",
+    data?: Record<string, unknown>,
+  ): Promise<string[]> {
+    const failed = await this.callMethod<string[] | null>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype, docnames: JSON.stringify(names), action, data: JSON.stringify(data ?? {}) },
+    )
+    this.invalidate(doctype)
+    return Array.isArray(failed) ? failed : []
+  }
+
+  /** Insert many documents in one transaction — any failure rolls back the whole batch. */
+  async insertMany(docs: Array<Record<string, unknown> & { doctype: string }>): Promise<string[]> {
+    const names = await this.callMethod<string[]>("frappe.client.insert_many", { docs: JSON.stringify(docs) })
+    const first = docs[0]
+    if (first) this.invalidate(first.doctype)
+    return names
+  }
+
+  async getWorkflowTransitions(doc: Record<string, unknown>): Promise<WorkflowTransition[]> {
+    const res = await this.callMethod<WorkflowTransition[]>("frappe.model.workflow.get_transitions", { doc: JSON.stringify(doc) })
+    return Array.isArray(res) ? res : []
+  }
+
+  async applyWorkflow<T extends FrappeDocument>(doc: Record<string, unknown>, action: string): Promise<T> {
+    const res = await this.callMethod<T>("frappe.model.workflow.apply_workflow", { doc: JSON.stringify(doc), action })
+    if (typeof doc.doctype === "string") this.invalidate(doc.doctype)
+    return res
   }
 
   async uploadFile(file: File, meta?: { doctype?: string; docname?: string; fieldname?: string; is_private?: 0 | 1 }): Promise<string> {

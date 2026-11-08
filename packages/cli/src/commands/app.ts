@@ -2,10 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import prompts from "prompts"
 import pc from "picocolors"
-import { findPetalCoreDir } from "../lib/apps-config"
+import { findPetalCoreDir, validateAppName, validateBundleUrl } from "../lib/apps-config"
 import type { PetalAppMeta } from "@petal/sdk"
 
 const APPS_FILE = "petal.apps.json"
+// petal.apps.json is re-read on every request; only the CSP's allowed origins are fixed at startup.
+const RELOAD_HINT = "  Refresh the browser to apply. Restart petal start if the bundle is served from a new origin.\n"
 
 function readApps(coreDir: string): PetalAppMeta[] {
   const filePath = join(coreDir, APPS_FILE)
@@ -66,11 +68,7 @@ export async function addApp(): Promise<void> {
         type: "text",
         name: "name",
         message: "App name:",
-        validate: (v: string) => {
-          if (!/^[a-z][a-z0-9-]*$/.test(v)) return "Use lowercase letters, numbers, hyphens"
-          if (apps.some((a) => a.name === v)) return `App "${v}" is already registered`
-          return true
-        },
+        validate: (v: string) => validateAppName(v, apps.map((a) => a.name)),
       },
       {
         type: "text",
@@ -83,12 +81,13 @@ export async function addApp(): Promise<void> {
         name: "devUrl",
         message: "Dev server URL (leave blank if none):",
         initial: "",
+        validate: (v: string) => validateBundleUrl(v, true),
       },
       {
         type: "text",
         name: "url",
         message: "Production bundle URL:",
-        validate: (v: string) => v.trim().length > 0 || "Required",
+        validate: (v: string) => validateBundleUrl(v),
       },
     ],
     { onCancel: () => process.exit(0) },
@@ -105,7 +104,7 @@ export async function addApp(): Promise<void> {
   writeApps(coreDir, apps)
 
   console.log(`\n  ${pc.green("✓")} Registered ${pc.bold(answers.name as string)} in petal.apps.json`)
-  console.log(pc.dim("  Restart petal start to apply.\n"))
+  console.log(pc.dim(RELOAD_HINT))
 }
 
 export async function updateApp(name: string): Promise<void> {
@@ -133,13 +132,14 @@ export async function updateApp(name: string): Promise<void> {
         name: "devUrl",
         message: "Dev server URL (leave blank to remove):",
         initial: existing.devUrl ?? "",
+        validate: (v: string) => validateBundleUrl(v, true),
       },
       {
         type: "text",
         name: "url",
         message: "Production bundle URL:",
         initial: existing.url,
-        validate: (v: string) => v.trim().length > 0 || "Required",
+        validate: (v: string) => validateBundleUrl(v),
       },
     ],
     { onCancel: () => process.exit(0) },
@@ -154,7 +154,7 @@ export async function updateApp(name: string): Promise<void> {
   writeApps(coreDir, apps)
 
   console.log(`\n  ${pc.green("✓")} Updated ${pc.bold(name)} in petal.apps.json`)
-  console.log(pc.dim("  Restart petal start to apply.\n"))
+  console.log(pc.dim(RELOAD_HINT))
 }
 
 export async function removeApp(name: string): Promise<void> {
@@ -183,5 +183,5 @@ export async function removeApp(name: string): Promise<void> {
   writeApps(coreDir, apps)
 
   console.log(`\n  ${pc.green("✓")} Removed ${pc.bold(name)} from petal.apps.json`)
-  console.log(pc.dim("  Restart petal start to apply.\n"))
+  console.log(pc.dim(RELOAD_HINT))
 }

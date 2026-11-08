@@ -5,6 +5,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { createPortal } from "react-dom"
 import { cn } from "../lib/utils"
 import { DeleteConfirmDialog } from "./delete-confirm-dialog"
+import { BulkEditDialog, bulkEditableFields } from "./bulk-edit-dialog"
+import { downloadText, toCsv } from "../lib/csv"
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -58,8 +60,21 @@ export type DocListProps = {
   currency?: string
   defaultView?: "list" | "grid"
   onViewChange?: (view: "list" | "grid") => void
+  /** Set every selected record's `fieldname` to `value`. Enables "Edit selected". */
+  onBulkUpdate?: (names: string[], fieldname: string, value: unknown) => Promise<void>
+  /** Submit the selected draft records. Enables "Submit selected" on submittable doctypes. */
+  onBulkSubmit?: (names: string[]) => Promise<void>
+  /** Enables the "Import" menu entry. */
+  onImportClick?: () => void
+  /** Rendered at the start of the toolbar, e.g. a view switcher. */
+  toolbarStart?: React.ReactNode
+  /** Increment to refetch the current page without resetting filters (e.g. on realtime updates). */
+  refreshSignal?: number
   className?: string
 }
+
+/** Upper bound on rows fetched for a CSV export of the filtered list. */
+export const EXPORT_LIMIT = 5000
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -731,7 +746,7 @@ function StandardFilterInput({
 // DocList
 // ---------------------------------------------------------------------------
 
-export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, onDelete, onCancel, onTreeClick, onFetchLinkOptions, currency = "USD", defaultView, onViewChange, className }: DocListProps) {
+export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, onDelete, onCancel, onTreeClick, onFetchLinkOptions, currency = "USD", defaultView, onViewChange, onBulkUpdate, onBulkSubmit, onImportClick, toolbarStart, refreshSignal = 0, className }: DocListProps) {
   // Data state
   const [rows, setRows]       = useState<Record<string, unknown>[]>([])
   const [total, setTotal]     = useState(0)
@@ -761,6 +776,8 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
   const [refreshKey, setRefreshKey]       = useState(0)
   const [showMenu, setShowMenu]           = useState(false)
   const [showStdFilterModal, setShowStdFilterModal] = useState(false)
+  const [showBulkEdit, setShowBulkEdit]   = useState(false)
+  const [exporting, setExporting]         = useState(false)
   const menuRef        = useRef<HTMLDivElement>(null)
   const filterPanelRef = useRef<HTMLDivElement>(null)
 
@@ -857,7 +874,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
       })
       .catch(() => setError(`Could not fetch ${doctype} list.`))
       .finally(() => setLoading(false))
-  }, [doctype, columns, imageFieldName, page, pageSize, sortField, sortDir, buildFilters, refreshKey])
+  }, [doctype, columns, imageFieldName, page, pageSize, sortField, sortDir, buildFilters, refreshKey, refreshSignal])
 
   // Close menus on outside click
   useEffect(() => {
@@ -936,6 +953,64 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
     }
   }
 
+  // Names of selected rows still in draft — submittable
+  const selectedDraftNames = rows
+    .filter((r) => selected.has(r.name as string) && (r.docstatus ?? 0) === 0)
+    .map((r) => r.name as string)
+
+  const canBulkEdit = !!onBulkUpdate && bulkEditableFields(meta.fields).length > 0
+
+  async function handleBulkUpdate(fieldname: string, value: unknown) {
+    if (!onBulkUpdate) return
+    await onBulkUpdate(Array.from(selected), fieldname, value)
+    setSelected(new Set())
+    setRefreshKey((k) => k + 1)
+  }
+
+  async function handleBulkSubmit() {
+    if (!onBulkSubmit) return
+    setShowMenu(false)
+    try {
+      await onBulkSubmit(selectedDraftNames)
+      setSelected(new Set())
+      setRefreshKey((k) => k + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Submit failed for some records.")
+    }
+  }
+
+  /** Export selected rows, or every row matching the current filters (up to EXPORT_LIMIT). */
+  async function handleExport() {
+    setShowMenu(false)
+    setExporting(true)
+    try {
+      const exportCols = [
+        { key: "name", label: "ID" },
+        ...meta.fields
+          .filter((f) => !SKIP_FIELDTYPES.has(f.fieldtype) && f.fieldtype !== "Attach Image" && f.fieldtype !== "Password")
+          .map((f) => ({ key: f.fieldname, label: f.label || f.fieldname })),
+      ]
+      const names = Array.from(selected)
+      const filtersForExport = names.length
+        ? [[doctype, "name", "in", names] as DocListFilter]
+        : buildFilters()
+      const { rows: data } = await fetchRef.current({
+        fields: exportCols.map((c) => c.key),
+        filters: filtersForExport,
+        or_filters: [],
+        order_by: `${sortField} ${sortDir}`,
+        limit: EXPORT_LIMIT,
+        limit_start: 0,
+      })
+      const stamp = new Date().toISOString().slice(0, 10)
+      downloadText(`${doctype}-${stamp}.csv`, toCsv(data, exportCols))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed.")
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function toggleSort(field: string) {
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
     else { setSortField(field); setSortDir("asc") }
@@ -988,6 +1063,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
     <div className={cn("space-y-3", className)}>
       {/* Toolbar */}
       <div className="flex flex-col gap-2 md:flex-row md:items-end">
+        {toolbarStart && <div className="shrink-0">{toolbarStart}</div>}
         {/* Standard filters — show first INLINE_FILTER_LIMIT inline, rest in modal */}
         {standardFilterFields.length > 0 && (
           <div className="flex-1 min-w-0">
@@ -1214,11 +1290,45 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
 
           {showMenu && (
             <div className="absolute right-0 top-full mt-1.5 w-52 rounded-xl border border-border bg-background shadow-xl py-1 z-[200]">
-              {selected.size > 0 && (onDelete || (hasDocstatus && onCancel)) ? (
+              {selected.size > 0 ? (
                 <>
                   <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                     {selected.size} selected
                   </div>
+
+                  {canBulkEdit && (
+                    <button
+                      onClick={() => { setShowMenu(false); setShowBulkEdit(true) }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <svg className="w-4 h-4 shrink-0 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/>
+                      </svg>
+                      Edit selected
+                    </button>
+                  )}
+
+                  {hasDocstatus && onBulkSubmit && selectedDraftNames.length > 0 && (
+                    <button
+                      onClick={() => void handleBulkSubmit()}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    >
+                      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                      </svg>
+                      Submit selected ({selectedDraftNames.length})
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => void handleExport()}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <svg className="w-4 h-4 shrink-0 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                    </svg>
+                    Export selected
+                  </button>
 
                   {hasDocstatus && onCancel && selectedSubmittedNames.length > 0 && (
                     <button
@@ -1256,7 +1366,29 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                   </button>
                 </>
               ) : (
-                <p className="px-3 py-2 text-xs text-muted-foreground">No actions available</p>
+                <>
+                  <button
+                    onClick={() => void handleExport()}
+                    disabled={exporting || total === 0}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 shrink-0 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                    </svg>
+                    {exporting ? "Exporting…" : `Export to CSV${total > EXPORT_LIMIT ? ` (first ${EXPORT_LIMIT})` : ""}`}
+                  </button>
+                  {onImportClick && (
+                    <button
+                      onClick={() => { setShowMenu(false); onImportClick() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <svg className="w-4 h-4 shrink-0 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                      </svg>
+                      Import from CSV
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1747,6 +1879,14 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
         deleting={deleting}
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
+      />
+
+      <BulkEditDialog
+        open={showBulkEdit}
+        count={selected.size}
+        fields={meta.fields}
+        onApply={handleBulkUpdate}
+        onClose={() => setShowBulkEdit(false)}
       />
 
       <DeleteConfirmDialog

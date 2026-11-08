@@ -3,13 +3,14 @@ import { Suspense, lazy, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { usePetalStore } from "@/store/petal-store"
 import Link from "next/link"
+import { PageLoader } from "@/components/shell/PageLoader"
 
 export default function CustomAppRoutePage() {
   const params = useParams()
   const slugParts = Array.isArray(params.slug) ? params.slug : [params.slug]
   const path = "/" + slugParts.join("/")
 
-  const { hooks } = usePetalStore()
+  const { hooks, hooksReady } = usePetalStore()
 
   const matchedRoute = useMemo(
     () => hooks.routes?.find((r) => r.path === path),
@@ -20,6 +21,10 @@ export default function CustomAppRoutePage() {
     () => (matchedRoute ? lazy(matchedRoute.component) : null),
     [matchedRoute]
   )
+
+  if (!RouteComponent && !hooksReady) {
+    return <PageLoader label="Loading apps…" />
+  }
 
   if (!RouteComponent) {
     return (
@@ -43,12 +48,7 @@ export default function CustomAppRoutePage() {
 
   return (
     <Suspense
-      fallback={
-        <div className="flex items-center gap-3 p-8 text-sm text-muted-foreground">
-          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          Loading...
-        </div>
-      }
+      fallback={<PageLoader />}
     >
       {layout === "blank" || layout === "fullscreen" ? (
         // Escape the shell layout for blank/fullscreen routes

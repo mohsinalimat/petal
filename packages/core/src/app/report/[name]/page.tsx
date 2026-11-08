@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "next/navigation"
 import { useFrappe } from "@/hooks/useFrappe"
+import { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell } from "@petal/ui"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -626,64 +627,53 @@ export default function ReportPage() {
             <p className="text-sm text-muted-foreground py-8 text-center">No columns returned.</p>
           ) : (
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-muted/50 border-b border-border">
-                      {columns.map((col, ci) => (
-                        <th
-                          key={col.fieldname + ci}
-                          className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap"
-                          style={col.width ? { minWidth: col.width } : undefined}
-                        >
-                          {col.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={columns.length}
-                          className="px-3 py-12 text-center text-sm text-muted-foreground"
-                        >
-                          No data found.
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((row, ri) => (
-                        <tr
-                          key={ri}
-                          className="border-b border-border/50 last:border-0 hover:bg-accent/40 transition-colors"
-                        >
-                          {columns.map((col, ci) => (
-                            <td
-                              key={col.fieldname + ci}
-                              className="px-3 py-2 text-foreground/80 whitespace-nowrap"
-                            >
-                              {formatCell((row as unknown[])[ci], col.fieldtype)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-
-                  {/* Total row */}
-                  {totalRow && (
-                    <tfoot>
-                      <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    {columns.map((col, ci) => (
+                      <TableHead
+                        key={col.fieldname + ci}
+                        className="whitespace-nowrap font-semibold"
+                        style={col.width ? { minWidth: col.width } : undefined}
+                      >
+                        {col.label}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.length === 0 ? (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={columns.length} className="py-12 text-center text-sm text-muted-foreground">
+                        No data found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    rows.map((row, ri) => (
+                      <TableRow key={ri} className="hover:bg-accent/40">
                         {columns.map((col, ci) => (
-                          <td key={col.fieldname + ci} className="px-3 py-2 text-xs text-foreground whitespace-nowrap">
-                            {formatCell((totalRow as unknown[])[ci], col.fieldtype)}
-                          </td>
+                          <TableCell key={col.fieldname + ci} className="whitespace-nowrap text-foreground/80">
+                            {formatCell((row as unknown[])[ci], col.fieldtype)}
+                          </TableCell>
                         ))}
-                      </tr>
-                    </tfoot>
+                      </TableRow>
+                    ))
                   )}
-                </table>
-              </div>
+                </TableBody>
+
+                {/* Total row */}
+                {totalRow && (
+                  <TableFooter>
+                    <TableRow className="hover:bg-muted/50 font-semibold">
+                      {columns.map((col, ci) => (
+                        <TableCell key={col.fieldname + ci} className="whitespace-nowrap text-xs text-foreground">
+                          {formatCell((totalRow as unknown[])[ci], col.fieldtype)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableFooter>
+                )}
+              </Table>
             </div>
           )}
         </div>

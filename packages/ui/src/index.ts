@@ -169,3 +169,40 @@ export type { ImageFieldProps } from "./components/image-field"
 
 export { InlineSelect } from "./components/inline-select"
 export type { InlineSelectProps } from "./components/inline-select"
+
+// ---------------------------------------------------------------------------
+// Alternate views, activity, bulk operations
+// ---------------------------------------------------------------------------
+
+export { ViewSwitcher } from "./components/view-switcher"
+export type { ViewSwitcherProps, DocViewKey } from "./components/view-switcher"
+
+export { KanbanBoard } from "./components/kanban-board"
+export type { KanbanBoardProps } from "./components/kanban-board"
+export { buildColumns, moveCard, groupableFields, defaultGroupField, selectOptions, UNSET_COLUMN } from "./lib/kanban"
+export type { KanbanColumn, KanbanField } from "./lib/kanban"
+
+export { CalendarView } from "./components/calendar-view"
+export type { CalendarViewProps } from "./components/calendar-view"
+export { buildMonthGrid, gridRange, toEvents, eventsByDay, shiftMonth, dateFields, dateKey, parseDateKey } from "./lib/calendar"
+export type { CalendarDay, CalendarEvent } from "./lib/calendar"
+
+export { GanttView } from "./components/gantt-view"
+export type { GanttViewProps } from "./components/gantt-view"
+export { buildBars, buildTicks, daysBetween, addDays, shiftDates } from "./lib/gantt"
+export type { GanttBar, GanttRange } from "./lib/gantt"
+
+export { DocTimeline } from "./components/doc-timeline"
+export type { DocTimelineProps } from "./components/doc-timeline"
+export { buildTimeline, parseVersion, htmlToText, textToCommentHtml, relativeTime } from "./lib/timeline"
+export type { DocInfo, TimelineItem, FieldChange, DocInfoAttachment, DocInfoAssignment } from "./lib/timeline"
+
+export { BulkEditDialog, bulkEditableFields } from "./components/bulk-edit-dialog"
+export type { BulkEditDialogProps, BulkEditField } from "./components/bulk-edit-dialog"
+
+export { ImportWizard } from "./components/import-wizard"
+export type { ImportWizardProps, ImportMode, ImportResult } from "./components/import-wizard"
+export { parseCsv, toCsv, downloadText, readFileText } from "./lib/csv"
+export type { CsvTable } from "./lib/csv"
+export { autoMapColumns, coerceValue, normalizeDate, prepareImport, importableFields, templateHeaders, chunk } from "./lib/import-mapping"
+export type { ImportField, ColumnMapping, RowIssue, PreparedImport } from "./lib/import-mapping"

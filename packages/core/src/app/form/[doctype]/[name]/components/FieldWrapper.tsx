@@ -1,9 +1,8 @@
 "use client"
-import { ChildTable } from "@petal/ui"
+import { ChildTable, FieldValue } from "@petal/ui"
 import type { ChildTableMeta } from "@petal/ui"
 import type { FieldBehavior } from "@petal/sdk"
 import { FieldInput } from "./FieldInput"
-import { fmtValue } from "./fmtValue"
 import type { MetaField } from "./types"
 
 export function FieldWrapper({ field, value, isEditing, onChange, behavior, childMetas, onLinkSearch, hasError, currency = "USD" }: {
@@ -61,6 +60,7 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
               onChange={onChange}
               disabled={field.read_only === 1}
               {...(behavior?.input_style && { inputStyle: behavior.input_style })}
+              {...(onLinkSearch !== undefined && { onLinkSearch })}
             />
           </div>
           {hasError && (
@@ -72,10 +72,12 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
         </div>
       ) : (
         <div className="min-h-[32px] flex items-start py-0.5">
-          {field.fieldtype === "Image"
-            ? fmtValue(value, field.fieldtype, currency)
-            : <span className="text-sm text-foreground leading-snug">{fmtValue(value, field.fieldtype, currency)}</span>
-          }
+          <FieldValue
+            value={value}
+            fieldtype={field.fieldtype}
+            currency={currency}
+            {...(field.fieldtype !== "Image" && { className: "text-foreground leading-snug" })}
+          />
         </div>
       )}
     </div>
