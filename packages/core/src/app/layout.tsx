@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import { PetalProvider } from "./petal-provider"
 import { ReactGlobals } from "./react-globals"
 import { ThemeProvider } from "@/components/theme/ThemeProvider"
@@ -23,13 +24,17 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Set by middleware.ts on every request — required for these inline scripts
+  // to pass the Content-Security-Policy script-src directive.
+  const nonce = headers().get("x-nonce") ?? undefined
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Must come before any module script — resolves bare React specifiers in custom app chunks */}
-        <script type="importmap" dangerouslySetInnerHTML={{ __html: IMPORT_MAP }} />
+        <script type="importmap" nonce={nonce} dangerouslySetInnerHTML={{ __html: IMPORT_MAP }} />
         {/* Injected before paint to prevent theme flash */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>
         {/* Exposes window.__petal_react before any custom app chunk is imported */}

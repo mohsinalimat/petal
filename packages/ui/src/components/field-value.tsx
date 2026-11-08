@@ -16,7 +16,7 @@ export interface FieldValueProps {
 /**
  * Read-only formatted display for any Frappe field value.
  * Handles Check, Date, Datetime, Currency, Float, Int, Percent, Color, Password, Rating,
- * and multi-line text types. Falls back to a plain text span for everything else.
+ * Image, Code, and multi-line text types. Falls back to a plain text span for everything else.
  *
  * @example
  * <FieldValue value={doc.status} fieldtype="Select" />
@@ -124,6 +124,64 @@ export function FieldValue({ value, fieldtype, currency = "USD", className }: Fi
           <span className="font-mono text-xs text-muted-foreground">{String(value)}</span>
         </span>
       )
+
+    case "Image":
+      return typeof value === "string" && value ? (
+        <img
+          src={value}
+          alt=""
+          className={cn("max-h-32 max-w-[180px] rounded-lg border border-border bg-muted/20 object-contain", className)}
+        />
+      ) : (
+        <span className={cn("text-xs italic text-muted-foreground/40", className)}>—</span>
+      )
+
+    case "Code": {
+      const raw = String(value)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        parsed = null
+      }
+      const isList = Array.isArray(parsed) && parsed.length > 0 && parsed.every((r) => r !== null && typeof r === "object" && !Array.isArray(r))
+      const isSingle = !Array.isArray(parsed) && parsed !== null && typeof parsed === "object"
+      if (isList || isSingle) {
+        const rows = isList ? (parsed as Record<string, unknown>[]) : [parsed as Record<string, unknown>]
+        const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))))
+        return (
+          <div className={cn("w-full overflow-x-auto rounded-lg border border-border/40", className)}>
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-border/40 bg-muted/50">
+                  {keys.map((k) => (
+                    <th key={k} className="whitespace-nowrap px-3 py-2 font-semibold uppercase tracking-wide text-muted-foreground">
+                      {k}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                    {keys.map((k) => (
+                      <td key={k} className="whitespace-nowrap px-3 py-2 text-foreground/80">
+                        {row[k] == null ? <span className="italic text-muted-foreground/40">—</span> : String(row[k])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      return (
+        <pre className={cn("max-h-64 w-full overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border/40 bg-muted/40 p-3 font-mono text-xs", className)}>
+          {raw}
+        </pre>
+      )
+    }
 
     case "Password":
       return (

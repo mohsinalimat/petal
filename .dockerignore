@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/coverage
+.git
+.github
+# Patterns must be recursive: packages/core/.env.local holds local secrets and
+# must never be baked into an image. Configure containers via runtime env.
+**/.petal
+**/.env
+**/.env.local
+**/.env.*.local
+**/petal.apps.json

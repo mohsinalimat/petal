@@ -5,6 +5,7 @@ import { usePetalStore } from "@/store/petal-store"
 import Link from "next/link"
 import type { FormSlotComponents } from "@petal/sdk"
 import { GenericForm } from "./GenericForm"
+import { PageLoader } from "@/components/shell/PageLoader"
 
 const SlotFallback = () => (
   <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -56,12 +57,7 @@ export default function FormPage() {
       </div>
 
       {OverrideComponent ? (
-        <Suspense fallback={
-          <div className="flex items-center gap-2 text-sm text-muted-foreground p-8">
-            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            Loading custom form…
-          </div>
-        }>
+        <Suspense fallback={<PageLoader label="Loading custom form…" />}>
           <OverrideComponent docname={name} />
         </Suspense>
       ) : (

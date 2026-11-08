@@ -69,6 +69,13 @@ export type DocTypeMeta = {
   permissions?: unknown[]
   actions?: unknown[]
   links?: unknown[]
+  /** Active workflow for this doctype, attached by frappe.desk.form.meta. */
+  __workflow_docs?: Array<{
+    name: string
+    workflow_state_field?: string
+    is_active?: 0 | 1
+    override_status?: 0 | 1
+  }>
 }
 
 export type LayoutColumn = { label: string; fields: MetaField[] }

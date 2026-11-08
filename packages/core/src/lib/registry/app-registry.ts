@@ -1,13 +1,16 @@
 import type { PetalAppMeta, PetalConfig, PetalHooks } from "@petal/sdk"
+import { mergeFormSlots } from "./compose-slots"
 
-const isDev = process.env.NODE_ENV === "development"
+// Load apps from their devUrl: always in `next dev`, and in a production build
+// when NEXT_PUBLIC_PETAL_USE_DEV_URLS=1 (fast local runs against app dev servers).
+const isDev = process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_PETAL_USE_DEV_URLS === "1"
 
 interface RegisteredApp {
   meta: PetalAppMeta
   hooks: PetalHooks
 }
 
-class AppRegistry {
+export class AppRegistry {
   private apps: Map<string, RegisteredApp> = new Map()
   private failedApps: Map<string, string> = new Map() // name → error message
 
@@ -144,7 +147,7 @@ class AppRegistry {
 
     if (Object.keys(mergedFormSlots).length > 0) {
       merged.form_slots = Object.fromEntries(
-        Object.entries(mergedFormSlots).map(([dt, slots]) => [dt, slots[0]!])
+        Object.entries(mergedFormSlots).map(([dt, slots]) => [dt, mergeFormSlots(slots)])
       )
     }
 

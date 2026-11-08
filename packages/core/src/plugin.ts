@@ -17,14 +17,16 @@ export function withPetal(petalConfig: PetalConfig) {
     }),
   )
 
-  const backendUrl = process.env.FRAPPE_BACKEND_URL ?? "http://localhost:8000"
+  const backendUrl = process.env.FRAPPE_BACKEND_URL || "http://localhost:8000"
 
   return (nextConfig: NextConfig = {}): NextConfig => ({
     ...nextConfig,
     env: {
       ...nextConfig.env,
-      ...(process.env.FRAPPE_BACKEND_URL ? {} : { FRAPPE_BACKEND_URL: backendUrl }),
-      // NEXT_PUBLIC_ alias lets client components read this — users never set it directly
+      // FRAPPE_BACKEND_URL is deliberately NOT listed here: anything in `env` is
+      // inlined at build time, which would freeze the backend URL into Docker
+      // images. Server code reads it from process.env at runtime instead.
+      // NEXT_PUBLIC_ alias lets client components show the URL (display only).
       NEXT_PUBLIC_FRAPPE_BACKEND_URL: backendUrl,
     },
   })

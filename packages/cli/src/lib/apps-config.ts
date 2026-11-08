@@ -48,3 +48,27 @@ export function findAppDirectory(appName: string, coreDir: string): string | nul
 
   return null
 }
+
+/**
+ * prompts-style validator for app bundle URLs: must be an absolute http(s) URL.
+ * Returns true or an error message. Empty is allowed only when `optional`.
+ */
+export function validateBundleUrl(value: string, optional = false): true | string {
+  const v = value.trim()
+  if (!v) return optional ? true : "Required"
+  let u: URL
+  try {
+    u = new URL(v)
+  } catch {
+    return "Must be an absolute URL, e.g. https://cdn.example.com/my-app/petal.hooks.js"
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "Must start with http:// or https://"
+  return true
+}
+
+/** App names become URL path segments and package names — keep them simple. */
+export function validateAppName(value: string, existing: string[]): true | string {
+  if (!/^[a-z][a-z0-9-]*$/.test(value)) return "Use lowercase letters, numbers, hyphens"
+  if (existing.includes(value)) return `App "${value}" is already registered`
+  return true
+}
