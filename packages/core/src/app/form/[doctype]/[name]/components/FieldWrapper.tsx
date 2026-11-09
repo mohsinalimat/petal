@@ -1,21 +1,55 @@
 "use client"
+import { useEffect, useRef } from "react"
 import { ChildTable, FieldValue } from "@petal/ui"
 import type { ChildTableMeta } from "@petal/ui"
 import type { FieldBehavior } from "@petal/sdk"
 import { FieldInput } from "./FieldInput"
-import type { MetaField } from "./types"
+import type { FormFieldExtras, LinkSearch, MetaField } from "./types"
 
-export function FieldWrapper({ field, value, isEditing, onChange, behavior, childMetas, onLinkSearch, hasError, currency = "USD" }: {
+/** Mounts a DOM element owned by a script (Frappe HTML fields) inside React's tree. */
+function HtmlHost({ el }: { el: HTMLElement }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const host = ref.current
+    if (!host) return
+    host.appendChild(el)
+    return () => { if (el.parentNode === host) host.removeChild(el) }
+  }, [el])
+  return <div ref={ref} className="petal-frappe-html" />
+}
+
+export function FieldWrapper({ field, value, isEditing, onChange, behavior, childMetas, onLinkSearch, hasError, currency = "USD", extras }: {
   field: MetaField
   value: unknown
   isEditing: boolean
   onChange: (v: unknown) => void
   behavior?: FieldBehavior
   childMetas?: Record<string, MetaField[]>
-  onLinkSearch?: (doctype: string, query: string) => Promise<{ value: string; description?: string }[]>
+  onLinkSearch?: LinkSearch
   hasError?: boolean
   currency?: string
+  extras?: FormFieldExtras
 }) {
+  if (field.fieldtype === "HTML" && extras?.htmlHost) {
+    const el = extras.htmlHost(field.fieldname)
+    return el ? <div id={`field-${field.fieldname}`} className="col-span-full min-w-0"><HtmlHost el={el} /></div> : null
+  }
+  if (field.fieldtype === "Button" && extras?.onButton) {
+    const onButton = extras.onButton
+    return (
+      <div id={`field-${field.fieldname}`} className="min-w-0">
+        <button
+          type="button"
+          disabled={field.read_only === 1}
+          onClick={() => onButton(field.fieldname)}
+          className="h-8 px-3 rounded-lg border border-border bg-background text-sm text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          {field.label}
+        </button>
+        {field.description && <p className="mt-1 text-[11px] text-muted-foreground/60 leading-snug">{field.description}</p>}
+      </div>
+    )
+  }
   if (field.fieldtype === "Table") {
     const tableRows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
     const tableMeta = field.options !== undefined
@@ -29,8 +63,12 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
           value={tableRows}
           {...(isEditing && field.read_only !== 1 ? { onChange: (rows) => onChange(rows) } : {})}
           disabled={!isEditing || field.read_only === 1}
-          {...(onLinkSearch !== undefined ? { onLinkSearch } : {})}
+          {...(onLinkSearch !== undefined
+            ? { onLinkSearch: (dt: string, q: string, ctx?: { fieldname: string; rowName?: string }) => onLinkSearch(dt, q, ctx ? { ...ctx, table: field.fieldname } : undefined) }
+            : {})}
           currency={currency}
+          {...(extras?.tableCannotAdd?.(field.fieldname) ? { cannotAddRows: true } : {})}
+          {...(extras?.tableButtons ? { buttons: extras.tableButtons(field.fieldname) } : {})}
         />
       </div>
     )

@@ -121,3 +121,32 @@
 /* ─── Base ────────────────────────────────────────────────────────────────── */
 * { border-color: hsl(var(--border)); }
 body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+
+/* ── HTML rendered by Frappe client scripts (msgprint, intros, HTML fields) ── */
+.petal-frappe-html { overflow-wrap: anywhere; }
+.petal-frappe-html a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+.petal-frappe-html p { margin: 0.25rem 0; }
+.petal-frappe-html ul { list-style: disc; padding-left: 1.25rem; margin: 0.25rem 0; }
+.petal-frappe-html ol { list-style: decimal; padding-left: 1.25rem; margin: 0.25rem 0; }
+.petal-frappe-html table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8125rem; }
+.petal-frappe-html th, .petal-frappe-html td { border: 1px solid hsl(var(--border)); padding: 0.375rem 0.5rem; text-align: left; vertical-align: top; }
+.petal-frappe-html th { background: hsl(var(--muted) / 0.4); font-weight: 600; }
+.petal-frappe-html pre { white-space: pre-wrap; font-size: 0.75rem; background: hsl(var(--muted) / 0.4); padding: 0.5rem; border-radius: 0.375rem; }
+.petal-frappe-html .text-muted, .petal-frappe-html .petal-compat-muted { color: hsl(var(--muted-foreground)); }
+.petal-frappe-html .text-right { text-align: right; }
+.petal-frappe-html .bold, .petal-frappe-html strong, .petal-frappe-html b { font-weight: 600; }
+.petal-frappe-html .hidden { display: none; }
+.petal-frappe-html .indicator::before, .petal-frappe-html .indicator-pill::before {
+  content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px; margin-right: 0.375rem; background: currentColor; vertical-align: middle;
+}
+.petal-frappe-html .indicator.green, .petal-frappe-html .indicator-pill.green { color: #16a34a; }
+.petal-frappe-html .indicator.red, .petal-frappe-html .indicator-pill.red { color: #dc2626; }
+.petal-frappe-html .indicator.orange, .petal-frappe-html .indicator-pill.orange { color: #ea580c; }
+.petal-frappe-html .indicator.blue, .petal-frappe-html .indicator-pill.blue { color: #2563eb; }
+.petal-frappe-html .indicator.gray, .petal-frappe-html .indicator.grey, .petal-frappe-html .indicator-pill.gray { color: #6b7280; }
+.petal-frappe-html .btn { display: inline-flex; align-items: center; height: 1.75rem; padding: 0 0.625rem; border-radius: 0.375rem; border: 1px solid hsl(var(--border)); font-size: 0.75rem; }
+.petal-frappe-html .btn-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+.petal-frappe-html .petal-compat-card { border: 1px solid hsl(var(--border)); border-radius: 0.5rem; padding: 0.625rem 0.75rem; margin-bottom: 0.5rem; font-size: 0.8125rem; }
+.petal-frappe-html .petal-compat-pill { font-size: 0.6875rem; padding: 0 0.375rem; border-radius: 9999px; background: hsl(var(--muted)); }
+.petal-frappe-html .petal-compat-btn { display: inline-flex; margin-top: 0.25rem; font-size: 0.75rem; }
+.petal-frappe-html .petal-compat-section-label { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(var(--muted-foreground)); margin-bottom: 0.375rem; }

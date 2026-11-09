@@ -116,7 +116,70 @@ export interface FormSlotComponents {
   toolbar?: () => Promise<{ default: ComponentType<{ docname: string }> }>
 }
 
+/** Field types a setup-wizard slide can render. */
+export type SetupWizardFieldType = "Data" | "Select" | "Check" | "Date" | "Int" | "Password" | "Small Text"
+
+export interface SetupWizardField {
+  fieldname: string
+  label: string
+  fieldtype: SetupWizardFieldType
+  /** Select options, newline-separated (Frappe style) or as an array. */
+  options?: string | string[]
+  reqd?: boolean
+  default?: string | number
+  description?: string
+  placeholder?: string
+}
+
+/**
+ * An extra slide in Petal's first-run setup wizard (/setup-wizard).
+ * Its values are merged into the `args` passed to Frappe's
+ * `frappe.desk.page.setup_wizard.setup_wizard.setup_complete`, so the app's own
+ * Python `setup_wizard_stages` / `setup_wizard_complete` hooks receive them.
+ *
+ * @example
+ * setup_wizard_slides: [{
+ *   name: "school",
+ *   app: "edusuite",
+ *   title: "Your school",
+ *   fields: [{ fieldname: "school_board", label: "Board", fieldtype: "Select", options: ["CBSE", "ICSE"], reqd: true }],
+ * }]
+ */
+export interface SetupWizardSlide {
+  /** Unique slide id. */
+  name: string
+  title: string
+  description?: string
+  /** Frappe app this slide belongs to. When set, the slide only shows while that app's setup is pending. */
+  app?: string
+  fields: SetupWizardField[]
+  /** Return an error message to block "Next", or null/undefined to continue. */
+  validate?: (values: Record<string, unknown>) => string | null | undefined
+}
+
+/**
+ * Run Frappe Desk form scripts (doctype JS, Client Scripts, app bundles such
+ * as erpnext.bundle.js) unchanged inside Petal's forms. Enabled when any app
+ * sets it; bundle lists from all apps are merged.
+ *
+ * @example
+ * frappe_compat: { enabled: true, bundles: ["erpnext.bundle.js"] }
+ */
+export interface FrappeCompatConfig {
+  enabled?: boolean
+  /** Bundle names from Frappe's assets.json, loaded once before the first form opens. */
+  bundles?: string[]
+  /** Also load `<app>.bundle.js` for every installed Frappe app (default true). */
+  autoBundles?: boolean
+  /** Doctypes that keep Petal's plain form even when the runtime is on. */
+  exclude?: string[]
+}
+
 export interface PetalHooks {
+  /** Run Frappe/ERPNext client scripts in Petal's forms. */
+  frappe_compat?: FrappeCompatConfig
+  /** Extra slides appended to the first-run setup wizard, after the built-in ones. */
+  setup_wizard_slides?: SetupWizardSlide[]
   sidebar_items?: SidebarItem[]
   /**
    * Override any property (icon, label, hidden, badge) for a sidebar item matched by label or path.

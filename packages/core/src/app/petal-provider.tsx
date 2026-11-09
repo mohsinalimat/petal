@@ -13,6 +13,10 @@ import { Sidebar } from "@/components/shell/Sidebar"
 import { Navbar } from "@/components/shell/Navbar"
 import { Toaster } from "@/components/shell/Toaster"
 import { ErrorBoundary } from "@/components/shell/ErrorBoundary"
+import { CompatHost } from "@/components/compat/CompatHost"
+import { fetchSetupStatus, isSystemManager } from "@/lib/setup/setup-wizard"
+
+const SETUP_PATH = "/setup-wizard"
 
 export function PetalProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -20,6 +24,8 @@ export function PetalProvider({ children }: { children: React.ReactNode }) {
   }))
   const { setUser, setAuthStatus, setHooks, setSidebarItems, setAppTheme, setSettings } = usePetalStore()
   const { authStatus, user } = usePetalStore()
+  const setupState = usePetalStore((s) => s.setupState)
+  const setSetupState = usePetalStore((s) => s.setSetupState)
   const pathname = usePathname()
   const router = useRouter()
   const bootDoneRef = useRef(false)
@@ -72,6 +78,28 @@ export function PetalProvider({ children }: { children: React.ReactNode }) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setUser, setAuthStatus, setAppTheme, setSettings])
+
+  // First-run setup: once per session, ask Frappe whether the setup wizard has
+  // run (same rule as frappe.is_setup_complete). Only System Managers can run it.
+  useEffect(() => {
+    if (authStatus !== "authenticated" || setupState !== "unknown") return
+    let cancelled = false
+    void fetchSetupStatus(getFrappeClient()).then((status) => {
+      if (cancelled) return
+      const currentUser = usePetalStore.getState().user
+      // Only send users to the wizard when it has something to run: with no
+      // pending app (odd Installed Applications data) it would be a dead end.
+      const needsWizard = !status.complete && status.pendingApps.length > 0
+      setSetupState(needsWizard && isSystemManager(currentUser) ? "pending" : "complete")
+    })
+    return () => { cancelled = true }
+  }, [authStatus, setupState, setSetupState])
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return
+    if (setupState === "pending" && pathname !== SETUP_PATH) router.replace(SETUP_PATH)
+    else if (setupState === "complete" && pathname === SETUP_PATH) router.replace("/")
+  }, [authStatus, setupState, pathname, router])
 
   // Sidebar uses plain fetch (no FrappeClient overrides), so it can start right after auth.
   useEffect(() => {
@@ -185,7 +213,20 @@ export function PetalProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (authStatus === "loading") {
+  // Hold the shell until we know whether first-run setup is needed, so the desk
+  // never flashes before a redirect to the wizard.
+  const setupBlocking = authStatus === "authenticated" && setupState !== "complete"
+
+  if (pathname === SETUP_PATH && authStatus === "authenticated" && setupState === "pending") {
+    return (
+      <QueryClientProvider client={queryClient}>
+        {children}
+        <Toaster />
+      </QueryClientProvider>
+    )
+  }
+
+  if (authStatus === "loading" || setupBlocking) {
     return (
       <QueryClientProvider client={queryClient}>
         <div className="min-h-screen bg-background flex items-center justify-center">
@@ -244,6 +285,7 @@ export function PetalProvider({ children }: { children: React.ReactNode }) {
       </div>
       {/* Toaster sits outside ErrorBoundary so it always renders even when a page crashes */}
       <Toaster />
+      {hooks.frappe_compat?.enabled && <CompatHost />}
     </div>
     </QueryClientProvider>
   )

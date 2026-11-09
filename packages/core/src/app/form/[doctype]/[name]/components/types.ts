@@ -91,3 +91,24 @@ export type LayoutTab = {
   fieldname: string
   sections: LayoutSection[]
 }
+
+/** Which field a link search is for (and which grid row, for child tables). */
+export type LinkSearchContext = { fieldname: string; table?: string; rowName?: string }
+
+export type LinkSearch = (
+  doctype: string,
+  query: string,
+  ctx?: LinkSearchContext,
+) => Promise<{ value: string; description?: string }[]>
+
+/** Hooks a form runtime (the Frappe-compatible one) can give the field renderers. */
+export type FormFieldExtras = {
+  /** Live DOM element for an HTML field; scripts write into it directly. */
+  htmlHost?: (fieldname: string) => HTMLElement | null
+  /** A Button field was clicked. */
+  onButton?: (fieldname: string) => void
+  /** Custom actions under a child table. */
+  tableButtons?: (fieldname: string) => Array<{ label: string; onClick: () => void }>
+  /** Child table hides "Add row". */
+  tableCannotAdd?: (fieldname: string) => boolean
+}

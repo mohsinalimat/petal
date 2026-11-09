@@ -338,6 +338,48 @@ Your component receives `{ filters?: Record<string, unknown> }`.
 
 ---
 
+### Running Frappe/ERPNext form scripts (`frappe_compat`)
+
+Petal can run Desk client code unchanged inside its forms: each doctype's form script (`__js`), Client Scripts, and app bundles such as `erpnext.bundle.js`. Turn it on from any app:
+
+```ts
+frappe_compat: {
+  enabled: true,
+  bundles: ["erpnext.bundle.js"],   // names from Frappe's assets.json
+  // autoBundles: true,             // also load <app>.bundle.js for every installed app (default)
+  // exclude: ["My Doctype"],       // keep Petal's plain form for these
+}
+```
+
+With it on, forms behave like Desk: `frappe.ui.form.on` events (setup → onload → refresh → field/child events → validate/before_save → after_save, submit/cancel), `frm.set_value`, `set_query`, `add_custom_button`, `toggle_display/reqd/enable`, `set_df_property`, `frm.call`, mapped documents, `frappe.ui.Dialog`, `msgprint/confirm/prompt`, the "Get Items From" picker, and saving through `frappe.desk.form.save.savedocs`. The runtime loads only when a form first opens (~170 KB gzipped, cached). See `docs/frappe-compat.md` for how it works and what isn't covered.
+
+---
+
+### Setup wizard slides
+
+On a fresh site (Frappe's `Installed Applications` shows `frappe`/`erpnext` with setup pending), Petal sends System Managers to `/setup-wizard` before the desk loads. It mirrors Desk's wizard: language/region, first user, and the ERPNext organization slide (company, abbreviation, chart of accounts, fiscal year). Then it calls `frappe.desk.page.setup_wizard.setup_wizard.setup_complete`. Background setup (`trigger_site_setup_in_background`) also works: Petal follows the `setup_task` realtime events and polls the status in case realtime is down.
+
+Apps can add their own slides. The values are merged into the `args` your Python `setup_wizard_stages` / `setup_wizard_complete` hooks receive:
+
+```ts
+setup_wizard_slides: [
+  {
+    name: "school",
+    app: "edusuite",          // shown only while edusuite's setup is pending (needs has_setup_wizard)
+    title: "Your school",
+    fields: [
+      { fieldname: "school_board", label: "Board", fieldtype: "Select", options: ["CBSE", "ICSE"], reqd: true },
+      { fieldname: "student_capacity", label: "Students", fieldtype: "Int" },
+    ],
+    validate: (v) => (Number(v.student_capacity) > 100000 ? "That's a lot of students" : null),
+  },
+]
+```
+
+Field types: `Data`, `Select`, `Check`, `Date`, `Int`, `Password`, `Small Text`.
+
+---
+
 ### Lifecycle hooks
 
 ```ts

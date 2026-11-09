@@ -45,6 +45,14 @@ export interface ChildTableMeta {
   default?: string
 }
 
+/** Which field (and row) a link search is for — lets the host apply per-field queries. */
+export interface LinkSearchContext {
+  fieldname: string
+  rowName?: string
+}
+
+export type LinkSearchFn = (doctype: string, query: string, ctx?: LinkSearchContext) => Promise<LinkFieldOption[]>
+
 export interface ChildTableProps {
   label: string
   /**
@@ -60,11 +68,15 @@ export interface ChildTableProps {
    * Link-field autocomplete. Called with (linkedDoctype, query).
    * Wire this to `frappe.desk.search.search_link`.
    */
-  onLinkSearch?: (doctype: string, query: string) => Promise<LinkFieldOption[]>
+  onLinkSearch?: LinkSearchFn
   /** ISO 4217 currency code for Currency fields, e.g. "USD", "INR". */
   currency?: string
   disabled?: boolean
   className?: string
+  /** Hide "Add row" (rows can still be edited and deleted). */
+  cannotAddRows?: boolean
+  /** Extra actions shown under the table. */
+  buttons?: Array<{ label: string; onClick: () => void }>
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +116,8 @@ function renderFieldInput(
   onChange: (v: unknown) => void,
   disabled: boolean,
   className: string,
-  onLinkSearch?: (doctype: string, query: string) => Promise<LinkFieldOption[]>,
+  onLinkSearch?: LinkSearchFn,
+  rowName?: string,
 ): React.ReactElement {
   if (field.fieldtype === "Link" && field.options !== undefined) {
     const linkedDoctype = field.options
@@ -119,7 +132,7 @@ function renderFieldInput(
         linkedDoctype={linkedDoctype}
         onLinkSearch={
           onLinkSearch
-            ? (q) => onLinkSearch(linkedDoctype, q)
+            ? (q) => onLinkSearch(linkedDoctype, q, { fieldname: field.fieldname, ...(rowName ? { rowName } : {}) })
             : () => Promise.resolve([])
         }
       />
@@ -164,7 +177,7 @@ function ExpandPanel({
   fields: ChildTableMeta[]
   editable: boolean
   onUpdate: (fieldname: string, value: unknown) => void
-  onLinkSearch?: (doctype: string, query: string) => Promise<LinkFieldOption[]>
+  onLinkSearch?: LinkSearchFn
   currency?: string
 }) {
   return (
@@ -202,6 +215,7 @@ function ExpandPanel({
                   false,
                   "w-full",
                   onLinkSearch,
+                  typeof row.name === "string" ? row.name : undefined,
                 )
               )}
             </div>
@@ -225,6 +239,8 @@ export function ChildTable({
   currency = "USD",
   disabled = false,
   className,
+  cannotAddRows = false,
+  buttons,
 }: ChildTableProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
 
@@ -341,7 +357,7 @@ export function ChildTable({
             <tbody>
               {value.map((row, rowIdx) => (
                 <tr
-                  key={rowIdx}
+                  key={typeof row.name === "string" ? row.name : rowIdx}
                   className={cn(
                     "border-b border-border/30 transition-colors",
                     rowIdx % 2 === 1
@@ -375,6 +391,7 @@ export function ChildTable({
                             false,
                             "w-full min-w-[80px]",
                             onLinkSearch,
+                            typeof row.name === "string" ? row.name : undefined,
                           )
                         )}
                       </td>
@@ -443,11 +460,13 @@ export function ChildTable({
               ))}
             </tbody>
 
-            {/* ── Footer: Add Row ── */}
-            {editable && (
+            {/* ── Footer: Add Row + custom actions ── */}
+            {((editable && !cannotAddRows) || (buttons && buttons.length > 0)) && (
               <tfoot>
                 <tr>
                   <td colSpan={totalCols} className="border-t border-border/40 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                    {editable && !cannotAddRows && (
                     <button
                       type="button"
                       onClick={addRow}
@@ -465,6 +484,18 @@ export function ChildTable({
                       </svg>
                       Add Row
                     </button>
+                    )}
+                    {buttons?.map((b) => (
+                      <button
+                        key={b.label}
+                        type="button"
+                        onClick={b.onClick}
+                        className="h-7 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent"
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                    </div>
                   </td>
                 </tr>
               </tfoot>

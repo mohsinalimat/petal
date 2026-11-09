@@ -5,6 +5,8 @@ import type { ThemeMode, ThemeName } from "@/lib/theme/theme-manager"
 import { readStoredMode, readStoredName } from "@/lib/theme/theme-manager"
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated"
+/** First-run setup wizard state. "unknown" until checked once per session. */
+export type SetupState = "unknown" | "pending" | "complete"
 
 interface AuthSlice {
   user: FrappeUser | null
@@ -41,7 +43,12 @@ interface SettingsSlice {
   setSettings: (settings: Record<string, unknown>) => void
 }
 
-type PetalState = AuthSlice & HooksSlice & ThemeSlice & UISlice & SettingsSlice
+interface SetupSlice {
+  setupState: SetupState
+  setSetupState: (state: SetupState) => void
+}
+
+type PetalState = AuthSlice & HooksSlice & ThemeSlice & UISlice & SettingsSlice & SetupSlice
 
 function createAuthSlice(set: (fn: (s: PetalState) => Partial<PetalState>) => void): AuthSlice {
   return {
@@ -99,12 +106,22 @@ export const usePetalStore = create<PetalState>()(
       ...createThemeSlice(set),
       ...createUISlice(set),
       ...createSettingsSlice(set),
+      setupState: "unknown",
+      setSetupState: (setupState) => set(() => ({ setupState })),
+      // The setup check is per user (only System Managers are sent to the
+      // wizard), so a logout or a different login re-runs it.
+      setUser: (user) => set((s) => (
+        s.user?.name === user?.name ? { user } : { user, setupState: "unknown" }
+      )),
     }),
     {
       name: "petal-store",
       storage: createJSONStorage(() => sessionStorage),
-      // Only persist the user slice — everything else rebuilds on boot
-      partialize: (state) => ({ user: state.user }),
+      // Only persist the user + a completed setup check — everything else rebuilds on boot
+      partialize: (state) => ({
+        user: state.user,
+        ...(state.setupState === "complete" ? { setupState: state.setupState } : {}),
+      }),
     }
   )
 )

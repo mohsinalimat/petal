@@ -1,8 +1,7 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { FieldInput as FieldInputUI } from "@petal/ui"
-import type { LinkFieldOption } from "@petal/ui"
-import type { MetaField } from "./types"
+import type { LinkSearch, MetaField } from "./types"
 
 export function FieldInput({ field, value, onChange, disabled = false, inputStyle, onLinkSearch }: {
   field: MetaField
@@ -10,7 +9,7 @@ export function FieldInput({ field, value, onChange, disabled = false, inputStyl
   onChange: (v: unknown) => void
   disabled?: boolean
   inputStyle?: Record<string, string>
-  onLinkSearch?: (doctype: string, query: string) => Promise<LinkFieldOption[]>
+  onLinkSearch?: LinkSearch
 }) {
   const router = useRouter()
 
@@ -29,7 +28,7 @@ export function FieldInput({ field, value, onChange, disabled = false, inputStyl
       {...(field.options !== undefined && { linkedDoctype: field.options })}
       {...(field.fieldtype === "Link" && { placeholder: `Search ${field.options ?? field.label}…` })}
       {...(field.fieldtype === "Link" && onLinkSearch !== undefined && {
-        onLinkSearch: (q: string) => onLinkSearch(field.options ?? "", q),
+        onLinkSearch: (q: string) => onLinkSearch(field.options ?? "", q, { fieldname: field.fieldname }),
       })}
       {...(field.fieldtype === "Link" && field.options !== undefined && { onLinkCreateNew: createNew })}
       id={`field-input-${field.fieldname}`}

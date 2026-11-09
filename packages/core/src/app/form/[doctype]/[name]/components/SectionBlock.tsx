@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { FieldWrapper } from "./FieldWrapper"
-import type { LayoutSection, MetaField } from "./types"
+import type { FormFieldExtras, LayoutSection, LinkSearch, MetaField } from "./types"
 import type { FieldBehavior } from "@petal/sdk"
 
 function evalDepends(expr: string | undefined, doc: Record<string, unknown>): boolean {
@@ -15,17 +15,18 @@ function evalDepends(expr: string | undefined, doc: Record<string, unknown>): bo
   }
 }
 
-export function SectionBlock({ section, values, isEditing, onChange, fieldBehaviors, childMetas, onLinkSearch, missingFields, currency = "USD", skipFields }: {
+export function SectionBlock({ section, values, isEditing, onChange, fieldBehaviors, childMetas, onLinkSearch, missingFields, currency = "USD", skipFields, extras }: {
   section: LayoutSection
   values: Record<string, unknown>
   isEditing: boolean
   onChange: (fn: string, v: unknown) => void
   fieldBehaviors: Record<string, FieldBehavior>
   childMetas?: Record<string, MetaField[]>
-  onLinkSearch?: (doctype: string, query: string) => Promise<{ value: string; description?: string }[]>
+  onLinkSearch?: LinkSearch
   missingFields?: Set<string>
   currency?: string
   skipFields?: Set<string>
+  extras?: FormFieldExtras
 }) {
   const [open, setOpen] = useState(true)
 
@@ -119,6 +120,7 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
                     {...(onLinkSearch !== undefined ? { onLinkSearch } : {})}
                     hasError={missingFields?.has(field.fieldname) ?? false}
                     currency={currency}
+                    {...(extras ? { extras } : {})}
                   />
                 ))}
               </div>
@@ -137,6 +139,7 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
                   {...(childMetas !== undefined ? { childMetas } : {})}
                   {...(onLinkSearch !== undefined ? { onLinkSearch } : {})}
                   currency={currency}
+                  {...(extras ? { extras } : {})}
                 />
               ))}
             </div>
