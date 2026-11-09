@@ -7,7 +7,7 @@ import { FieldInput } from "./FieldInput"
 import type { FormFieldExtras, LinkSearch, MetaField } from "./types"
 
 /** Mounts a DOM element owned by a script (Frappe HTML fields) inside React's tree. */
-function HtmlHost({ el }: { el: HTMLElement }) {
+export function HtmlHost({ el }: { el: HTMLElement }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const host = ref.current
@@ -16,6 +16,16 @@ function HtmlHost({ el }: { el: HTMLElement }) {
     return () => { if (el.parentNode === host) host.removeChild(el) }
   }, [el])
   return <div ref={ref} className="petal-frappe-html" />
+}
+
+/** Desk's control attributes, so scripts' [data-fieldname=x] / .frappe-control selectors match. */
+function deskAttrs(field: MetaField, extra = "") {
+  return {
+    id: `field-${field.fieldname}`,
+    "data-fieldname": field.fieldname,
+    "data-fieldtype": field.fieldtype,
+    className: `frappe-control ${extra}`.trim(),
+  }
 }
 
 export function FieldWrapper({ field, value, isEditing, onChange, behavior, childMetas, onLinkSearch, hasError, currency = "USD", extras }: {
@@ -32,12 +42,23 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
 }) {
   if (field.fieldtype === "HTML" && extras?.htmlHost) {
     const el = extras.htmlHost(field.fieldname)
+    // The adopted element is the field's own wrapper and carries Desk's attributes.
     return el ? <div id={`field-${field.fieldname}`} className="col-span-full min-w-0"><HtmlHost el={el} /></div> : null
+  }
+  if (extras?.deskControl && extras.usesDeskControl?.(field.fieldtype)) {
+    // Desk's real control (it draws its own label, input and description).
+    const el = extras.deskControl(field.fieldname)
+    const wide = ["Geolocation", "Signature", "JSON", "Markdown Editor", "HTML Editor", "Table MultiSelect"].includes(field.fieldtype)
+    return (
+      <div id={`field-${field.fieldname}`} className={`petal-desk min-w-0 ${wide ? "col-span-full" : ""}`}>
+        {el ? <HtmlHost el={el} /> : <div className="h-14 animate-pulse rounded-lg bg-muted/60" aria-label={`Loading ${field.label}`} />}
+      </div>
+    )
   }
   if (field.fieldtype === "Button" && extras?.onButton) {
     const onButton = extras.onButton
     return (
-      <div id={`field-${field.fieldname}`} className="min-w-0">
+      <div {...deskAttrs(field, "min-w-0")}>
         <button
           type="button"
           disabled={field.read_only === 1}
@@ -56,7 +77,7 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
       ? (childMetas?.[field.options] as ChildTableMeta[] | undefined)
       : undefined
     return (
-      <div id={`field-${field.fieldname}`} className="col-span-full mt-1">
+      <div {...deskAttrs(field, "col-span-full mt-1")}>
         <ChildTable
           label={field.label}
           {...(tableMeta !== undefined ? { meta: tableMeta } : {})}
@@ -76,22 +97,22 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
 
   const isFullWidth = ["Small Text", "Text", "Long Text", "Text Editor", "Code"].includes(field.fieldtype)
   return (
-    <div id={`field-${field.fieldname}`} className={`group min-w-0 ${isFullWidth ? "col-span-full" : ""}`}>
-      <div className="flex items-center gap-1 mb-1.5">
+    <div {...deskAttrs(field, `group min-w-0 ${isFullWidth ? "col-span-full" : ""}`)}>
+      <div className="clearfix flex items-center gap-1 mb-1.5">
         {field.reqd === 1 && (
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-px ${hasError ? "bg-red-500" : "bg-red-400"}`} />
         )}
         <label
           style={behavior?.label_style as React.CSSProperties}
-          className={`text-[11px] font-semibold uppercase tracking-wide leading-none ${hasError ? "text-red-500" : "text-muted-foreground"}`}
+          className={`control-label text-[11px] font-semibold uppercase tracking-wide leading-none ${hasError ? "text-red-500" : "text-muted-foreground"}`}
         >
           {field.label}
         </label>
       </div>
 
       {isEditing ? (
-        <div className="space-y-1">
-          <div className={hasError ? "rounded-lg ring-2 ring-red-400/70" : ""}>
+        <div className="control-input-wrapper space-y-1">
+          <div className={`control-input ${hasError ? "rounded-lg ring-2 ring-red-400/70" : ""}`}>
             <FieldInput
               field={field}
               value={value}
@@ -105,11 +126,11 @@ export function FieldWrapper({ field, value, isEditing, onChange, behavior, chil
             <p className="text-[11px] text-red-500 font-medium">This field is required</p>
           )}
           {!hasError && field.description && (
-            <p className="text-[11px] text-muted-foreground/60 leading-snug">{field.description}</p>
+            <p className="help-box text-[11px] text-muted-foreground/60 leading-snug">{field.description}</p>
           )}
         </div>
       ) : (
-        <div className="min-h-[32px] flex items-start py-0.5">
+        <div className="control-value min-h-[32px] flex items-start py-0.5">
           <FieldValue
             value={value}
             fieldtype={field.fieldtype}

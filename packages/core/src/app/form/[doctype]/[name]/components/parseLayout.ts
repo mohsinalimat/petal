@@ -36,6 +36,7 @@ export function parseLayout(fields: MetaField[]): LayoutTab[] {
     } else if (f.fieldtype === "Section Break") {
       pushSection()
       currentSection = { label: f.label || "", collapsible: f.collapsible === 1, columns: [{ label: "", fields: [] }] }
+      if (f.fieldname) currentSection.fieldname = f.fieldname
       colIdx         = 0
     } else if (f.fieldtype === "Column Break") {
       colIdx++
@@ -43,6 +44,7 @@ export function parseLayout(fields: MetaField[]): LayoutTab[] {
         currentSection.columns.push({ label: "", fields: [] })
       }
       currentSection.columns[colIdx]!.label = f.label || ""
+      if (f.fieldname) currentSection.columns[colIdx]!.fieldname = f.fieldname
     } else if (!SKIP_RENDER.has(f.fieldtype)) {
       while (currentSection.columns.length <= colIdx) {
         currentSection.columns.push({ label: "", fields: [] })

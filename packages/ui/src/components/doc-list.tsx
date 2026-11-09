@@ -71,6 +71,64 @@ export type DocListProps = {
   /** Increment to refetch the current page without resetting filters (e.g. on realtime updates). */
   refreshSignal?: number
   className?: string
+  /** Extra fields to fetch with each row (e.g. ones a status indicator reads). */
+  extraFields?: string[]
+  /** Status shown next to each row's title; replaces the docstatus dot. Return null for none. */
+  rowIndicator?: (row: Record<string, unknown>) => DocListIndicator | null
+  /** Custom cell content. Return undefined to fall back to the default formatting. */
+  renderCell?: (fieldname: string, value: unknown, row: Record<string, unknown>) => React.ReactNode | undefined
+  /** Filters applied when the list first loads, e.g. [["status", "=", "Open"]]. */
+  initialFilters?: Array<DocListFilter | [string, string, unknown]>
+  /** Extra actions for the selected rows, listed in the "More actions" menu. */
+  selectionActions?: DocListAction[]
+  /** Extra entries in the "More actions" menu when nothing is selected. */
+  menuActions?: DocListAction[]
+  /** Rendered just before the Create button, e.g. custom toolbar buttons. */
+  toolbarEnd?: React.ReactNode
+  /** Called whenever the selection changes. */
+  onSelectionChange?: (names: string[]) => void
+  /** Called with each page of rows after it loads. */
+  onRowsLoaded?: (rows: Record<string, unknown>[]) => void
+  /** Increment to clear the selection. */
+  clearSelectionSignal?: number
+}
+
+export type DocListIndicator = { label: string; color: string }
+export type DocListAction = { label: string; onClick: (names: string[]) => void; danger?: boolean }
+
+const INDICATOR_PILL: Record<string, string> = {
+  green: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-900",
+  red: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900",
+  orange: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900",
+  yellow: "bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-900",
+  blue: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900",
+  purple: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900",
+  gray: "bg-muted text-muted-foreground border-border",
+}
+const INDICATOR_ALIAS: Record<string, string> = { grey: "gray", darkgrey: "gray", "light-blue": "blue", cyan: "blue", pink: "purple", black: "gray", "light-gray": "gray" }
+
+function IndicatorPill({ indicator }: { indicator: DocListIndicator }) {
+  const key = INDICATOR_ALIAS[indicator.color] ?? indicator.color
+  return (
+    <span className={cn("inline-flex items-center shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap", INDICATOR_PILL[key] ?? INDICATOR_PILL.gray)}>
+      {indicator.label}
+    </span>
+  )
+}
+
+/** Desk-style [field, op, value] or [doctype, field, op, value] → the list's editable filter rows. */
+function toActiveFilters(list: Array<DocListFilter | [string, string, unknown]> | undefined): ActiveFilter[] {
+  const out: ActiveFilter[] = []
+  for (const f of list ?? []) {
+    const [field, op, value] = f.length === 4 ? [f[1], f[2], f[3]] : [f[0], f[1], f[2]]
+    if (!field || !op) continue
+    let operator = String(op).toLowerCase()
+    let v: string
+    if (operator === "is") { operator = value === "not set" ? "is not set" : "is set"; v = "" }
+    else v = Array.isArray(value) ? value.join(",") : String(value ?? "")
+    out.push({ id: `init-${out.length}-${field}`, field, operator, value: v })
+  }
+  return out
 }
 
 /** Upper bound on rows fetched for a CSV export of the filtered list. */
@@ -746,7 +804,7 @@ function StandardFilterInput({
 // DocList
 // ---------------------------------------------------------------------------
 
-export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, onDelete, onCancel, onTreeClick, onFetchLinkOptions, currency = "USD", defaultView, onViewChange, onBulkUpdate, onBulkSubmit, onImportClick, toolbarStart, refreshSignal = 0, className }: DocListProps) {
+export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, onDelete, onCancel, onTreeClick, onFetchLinkOptions, currency = "USD", defaultView, onViewChange, onBulkUpdate, onBulkSubmit, onImportClick, toolbarStart, refreshSignal = 0, className, extraFields, rowIndicator, renderCell, initialFilters, selectionActions, menuActions, toolbarEnd, onSelectionChange, onRowsLoaded, clearSelectionSignal = 0 }: DocListProps) {
   // Data state
   const [rows, setRows]       = useState<Record<string, unknown>[]>([])
   const [total, setTotal]     = useState(0)
@@ -758,7 +816,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
   const [pageSize, setPageSize]       = useState<typeof PAGE_SIZE_OPTIONS[number]>(20)
   const [sortField, setSortField]     = useState(meta.sort_field ?? "modified")
   const [sortDir, setSortDir]         = useState<SortDir>((meta.sort_order?.toLowerCase() as SortDir) ?? "desc")
-  const [filters, setFilters]               = useState<ActiveFilter[]>([])
+  const [filters, setFilters]               = useState<ActiveFilter[]>(() => toActiveFilters(initialFilters))
   const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [draftFilters, setDraftFilters]     = useState<ActiveFilter[]>([])
   const [stdFilters, setStdFilters]         = useState<Record<string, string>>({})
@@ -784,6 +842,13 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
   // Keep onFetchData ref-stable so data effect doesn't re-run on every render
   const fetchRef = useRef(onFetchData)
   useEffect(() => { fetchRef.current = onFetchData })
+  const rowsLoadedRef = useRef(onRowsLoaded)
+  useEffect(() => { rowsLoadedRef.current = onRowsLoaded })
+  const selectionRef = useRef(onSelectionChange)
+  useEffect(() => { selectionRef.current = onSelectionChange })
+  useEffect(() => { selectionRef.current?.([...selected]) }, [selected])
+  useEffect(() => { if (clearSelectionSignal) setSelected(new Set()) }, [clearSelectionSignal])
+  const extraFieldsKey = (extraFields ?? []).join(",")
 
   // Derived columns — uses title_field as the primary display column when set
   const titleFieldName = meta.title_field && meta.title_field !== "name" ? meta.title_field : undefined
@@ -859,6 +924,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
     if (!fieldNames.includes("name")) fieldNames.push("name")
     if (!fieldNames.includes("docstatus")) fieldNames.push("docstatus")
     if (imageFieldName && !fieldNames.includes(imageFieldName)) fieldNames.push(imageFieldName)
+    for (const f of extraFieldsKey ? extraFieldsKey.split(",") : []) if (!fieldNames.includes(f)) fieldNames.push(f)
 
     fetchRef.current({
       fields: fieldNames,
@@ -871,10 +937,11 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
       .then(({ rows: r, total: t }) => {
         setRows(r)
         setTotal(t)
+        rowsLoadedRef.current?.(r)
       })
       .catch(() => setError(`Could not fetch ${doctype} list.`))
       .finally(() => setLoading(false))
-  }, [doctype, columns, imageFieldName, page, pageSize, sortField, sortDir, buildFilters, refreshKey, refreshSignal])
+  }, [doctype, columns, imageFieldName, page, pageSize, sortField, sortDir, buildFilters, refreshKey, refreshSignal, extraFieldsKey])
 
   // Close menus on outside click
   useEffect(() => {
@@ -1053,6 +1120,21 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
 
   const totalPages   = Math.ceil(total / pageSize)
   const hasDocstatus = (meta.is_submittable ?? 0) === 1
+
+  /** The app's status indicator when given, otherwise the docstatus dot. */
+  function statusMark(row: Record<string, unknown>, dsInfo: { label: string; dot: string }, ds: number | undefined) {
+    if (rowIndicator) {
+      const ind = rowIndicator(row)
+      return ind ? <IndicatorPill indicator={ind} /> : null
+    }
+    return hasDocstatus && ds !== undefined
+      ? <span title={dsInfo.label} className={cn("w-2 h-2 rounded-full shrink-0", dsInfo.dot)} />
+      : null
+  }
+  function cell(col: ListMetaField, row: Record<string, unknown>) {
+    const custom = renderCell?.(col.fieldname, row[col.fieldname], row)
+    return custom !== undefined ? custom : formatCell(row[col.fieldname], col.fieldtype, currency)
+  }
 
   function changeView(v: ViewMode) {
     setViewMode(v)
@@ -1354,6 +1436,17 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                     </button>
                   )}
 
+                  {(selectionActions ?? []).length > 0 && <div className="mx-2 my-1 h-px bg-border/60" />}
+                  {(selectionActions ?? []).map((a) => (
+                    <button
+                      key={a.label}
+                      onClick={() => { setShowMenu(false); a.onClick([...selected]) }}
+                      className={cn("w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent transition-colors text-left", a.danger ? "text-red-600 dark:text-red-400" : "text-foreground")}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+
                   <div className="mx-2 my-1 h-px bg-border/60" />
                   <button
                     onClick={() => { setSelected(new Set()); setShowMenu(false) }}
@@ -1388,11 +1481,23 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                       Import from CSV
                     </button>
                   )}
+                  {(menuActions ?? []).length > 0 && <div className="mx-2 my-1 h-px bg-border/60" />}
+                  {(menuActions ?? []).map((a) => (
+                    <button
+                      key={a.label}
+                      onClick={() => { setShowMenu(false); a.onClick([]) }}
+                      className={cn("w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent transition-colors text-left", a.danger ? "text-red-600 dark:text-red-400" : "text-foreground")}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
                 </>
               )}
             </div>
           )}
         </div>
+
+        {toolbarEnd}
 
         {/* Create */}
         <button
@@ -1576,9 +1681,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-primary">{String(row[col.fieldname] ?? name)}</span>
-                                  {hasDocstatus && ds !== undefined && (
-                                    <span title={dsInfo.label} className={cn("w-2 h-2 rounded-full shrink-0", dsInfo.dot)} />
-                                  )}
+                                  {statusMark(row, dsInfo, ds)}
                                 </div>
                                 <span className="block text-[10px] text-muted-foreground/60 mt-0.5">{name}</span>
                               </div>
@@ -1587,12 +1690,10 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                             ? (
                               <div className="flex items-center gap-2">
                                 <span className="font-semibold text-primary">{name}</span>
-                                {hasDocstatus && ds !== undefined && (
-                                  <span title={dsInfo.label} className={cn("w-2 h-2 rounded-full shrink-0", dsInfo.dot)} />
-                                )}
+                                {statusMark(row, dsInfo, ds)}
                               </div>
                             )
-                            : formatCell(row[col.fieldname], col.fieldtype, currency)
+                            : cell(col, row)
                           }
                         </td>
                       ))}
@@ -1637,9 +1738,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-primary text-sm truncate flex-1">{primary}</span>
-                    {hasDocstatus && ds !== undefined && (
-                      <span title={dsInfo.label} className={cn("w-2 h-2 rounded-full shrink-0", dsInfo.dot)} />
-                    )}
+                    {statusMark(row, dsInfo, ds)}
                   </div>
                   {titleFieldName && (
                     <span className="text-[10px] text-muted-foreground/60">{name}</span>
@@ -1650,7 +1749,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                     return (
                       <div key={col.fieldname} className="flex items-baseline gap-1 mt-1 text-xs text-muted-foreground">
                         <span className="font-medium shrink-0">{col.label}:</span>
-                        <span className="truncate">{formatCell(val, col.fieldtype, currency)}</span>
+                        <span className="truncate">{cell(col, row)}</span>
                       </div>
                     )
                   })}
@@ -1731,9 +1830,7 @@ export function DocList({ doctype, meta, onFetchData, onRowClick, onNewClick, on
                     <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate flex-1">
                       {cardTitle}
                     </p>
-                    {hasDocstatus && ds !== undefined && (
-                      <span title={dsInfo.label} className={cn("w-2 h-2 rounded-full shrink-0", dsInfo.dot)} />
-                    )}
+                    {statusMark(row, dsInfo, ds)}
                   </div>
                   {titleFieldName && (
                     <p className="text-[10px] text-muted-foreground/60 truncate">{name}</p>

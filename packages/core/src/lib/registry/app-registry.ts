@@ -146,6 +146,12 @@ export class AppRegistry {
               bundles: [...new Set(all.flatMap((h) => h.frappe_compat?.bundles ?? []))],
               autoBundles: all.every((h) => h.frappe_compat?.autoBundles !== false),
               exclude: [...new Set(all.flatMap((h) => h.frappe_compat?.exclude ?? []))],
+              desk_controls: [...new Set(all.flatMap((h) => h.frappe_compat?.desk_controls ?? []))],
+              desk: {
+                doctypes: [...new Set(all.flatMap((h) => h.frappe_compat?.desk?.doctypes ?? []))],
+                pages: [...new Set(all.flatMap((h) => h.frappe_compat?.desk?.pages ?? []))],
+                embed: all.some((h) => h.frappe_compat?.desk?.embed),
+              },
             },
           }
         : {}),

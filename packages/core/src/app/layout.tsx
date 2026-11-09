@@ -4,6 +4,8 @@ import { PetalProvider } from "./petal-provider"
 import { ReactGlobals } from "./react-globals"
 import { ThemeProvider } from "@/components/theme/ThemeProvider"
 import { THEME_SCRIPT } from "@/lib/theme/theme-manager"
+import "frappe-charts/dist/frappe-charts.min.css"
+import "frappe-datatable/dist/frappe-datatable.min.css"
 import "./globals.css"
 
 // Import map: resolves bare 'react' and 'react/jsx-runtime' specifiers in

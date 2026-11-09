@@ -16,6 +16,10 @@ function runtimeOrigins(req: NextRequest): string | null {
   return appOrigins(apps).join(" ")
 }
 
+function deskOrigin(): string | null {
+  try { return process.env.NEXT_PUBLIC_PETAL_DESK_URL ? new URL(process.env.NEXT_PUBLIC_PETAL_DESK_URL).origin : null } catch { return null }
+}
+
 function randomNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   let binary = ""
@@ -54,6 +58,8 @@ export function middleware(req: NextRequest) {
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
+    // Desk embeds (frappe_compat.desk.embed) may frame only Desk's own origin.
+    `frame-src ${["'self'", deskOrigin()].filter(Boolean).join(" ")}`,
     "frame-ancestors 'none'",
     "form-action 'self'",
   ].join("; ")

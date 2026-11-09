@@ -18,6 +18,10 @@ const HAS_BENCH = fs.existsSync(ASSETS)
 const APPS = (process.env.FRAPPE_APPS ?? "erpnext,hrms").split(",")
 const REPORT = process.env.PETAL_COMPAT_REPORT
 
+// Browser APIs jsdom lacks that frappe-charts / frappe-datatable use.
+;(globalThis as any).ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} }
+;(globalThis as any).DOMMatrixReadOnly ??= class { m41 = 0; m42 = 0; constructor(_t?: string) {} }
+
 type Meta = Record<string, any>
 
 function walk(dir: string, out: string[] = []): string[] {

@@ -77,6 +77,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
   const compat   = useCompatForm(compatConfig ? doctype : null, name, compatConfig, compatOn ? prefillRef.current?.values : null)
   const cd       = compat.derived
+  // Scripts search the form's DOM (frm.wrapper, fields_dict.x.$wrapper…): give
+  // the runtime Petal's rendered form while it's mounted.
+  const compatRootRef = compat.attachRoot
   const meta       = compatOn ? (cd?.meta ?? null) : metaState
   const childMetas = compatOn ? (cd?.childMetas ?? {}) : childMetasState
   const values     = compatOn ? (cd?.values ?? {}) : valuesState
@@ -543,7 +546,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const skipFields = imageFieldname ? new Set([imageFieldname]) : undefined
 
   return (
-    <div className="space-y-0 pb-12">
+    <div ref={compatRootRef} className="form-layout space-y-0 pb-12" data-doctype={doctype}>
       {/* ── Form header ─────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 pb-5 border-b border-border mb-6">
         <div className="flex items-center gap-3 min-w-0">

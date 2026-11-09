@@ -1,5 +1,5 @@
 "use client"
-import { Suspense, lazy, useMemo, useEffect, useState } from "react"
+import { Suspense, lazy, useMemo, useEffect, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { usePetalStore } from "@/store/petal-store"
 import { useFrappe } from "@/hooks/useFrappe"
@@ -10,6 +10,8 @@ import { useRealtimeList } from "@/hooks/useRealtime"
 import { DoctypeViewHeader } from "@/components/views/DoctypeViewHeader"
 import type { DocTypeMeta } from "@/app/form/[doctype]/[name]/components/types"
 import { PageLoader } from "@/components/shell/PageLoader"
+import { CompatButtonBar } from "@/components/compat/FormChrome"
+import { useCompatList } from "./useCompatList"
 
 // ---------------------------------------------------------------------------
 // Page wrapper
@@ -31,6 +33,17 @@ export default function ListPage() {
   const [listKey, setListKey]         = useState(0)
   const [showQuickEntry, setShowQuickEntry] = useState(false)
   const [refreshSignal, setRefreshSignal]   = useState(0)
+
+  // Frappe list view settings (indicators, add_fields, onload buttons…) when the
+  // Frappe-compatible runtime is on for this doctype.
+  const compatConfig = hooks.frappe_compat?.enabled && !(hooks.frappe_compat.exclude ?? []).includes(doctype)
+    ? hooks.frappe_compat : null
+  const compatList = useCompatList(doctype, compatConfig, () => {
+    frappe.invalidate(doctype)
+    setRefreshSignal((n) => n + 1)
+  })
+  const scriptFiltersRef = useRef(compatList.scriptFilters)
+  scriptFiltersRef.current = compatList.scriptFilters
 
   // Someone else created/saved/deleted a record — refetch the current page in place
   useRealtimeList(doctype, () => {
@@ -58,11 +71,12 @@ export default function ListPage() {
   async function fetchData(params: DocListFetchParams) {
     // Lists must reflect other users' changes on refresh — skip the 30s GET cache
     frappe.invalidate(`/doc/${doctype}?`)
+    const filters = [...params.filters, ...scriptFiltersRef.current]
     const [rows, total] = await Promise.all([
       frappe.getList({
         doctype,
         fields: params.fields,
-        filters: params.filters,
+        filters,
         or_filters: params.or_filters,
         order_by: params.order_by,
         limit: params.limit,
@@ -70,7 +84,7 @@ export default function ListPage() {
       }),
       frappe.callMethod<number>("frappe.client.get_count", {
         doctype,
-        filters: params.filters,
+        filters,
       }),
     ])
     return {
@@ -186,8 +200,10 @@ export default function ListPage() {
         <Suspense fallback={<PageLoader label="Loading custom view…" />}>
           <OverrideComponent filters={{}} />
         </Suspense>
-      ) : meta ? (
+      ) : meta && !compatList.loading ? (
         <DocList
+          {...compatList.props}
+          toolbarEnd={compatList.buttons.length ? <CompatButtonBar buttons={compatList.buttons} /> : undefined}
           key={listKey}
           doctype={doctype}
           meta={meta}

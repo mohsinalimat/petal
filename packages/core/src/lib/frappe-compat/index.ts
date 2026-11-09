@@ -13,6 +13,8 @@ import { installRequest, setTransport, type Transport } from "./request"
 import { installUI, setToast } from "./ui"
 import { getForm, installForm, installLegacyFormGlobals, notifyForms, type Form } from "./form"
 import { installExtras } from "./extras"
+import { loadWidgetLibs } from "./widgets"
+export { deskControlsReady, loadDeskControls } from "./desk-controls"
 
 export { notifyForms, subscribeForms, getForm, type Form, type CustomButton } from "./form"
 export { uiStore, type Entry, type MsgEntry, type DialogEntry, type PickerEntry, CompatDialog, DialogField, MultiSelectPicker } from "./ui"
@@ -37,7 +39,21 @@ export interface CompatOptions {
   autoBundles?: boolean
   /** Base path of the Petal proxy. */
   proxyBase?: string
+  /**
+   * Load Desk's boot data. In the browser this reads it from the desk page
+   * (frappe.sessions.get isn't whitelisted); defaults to calling it, for tests.
+   */
+  boot?: () => Promise<Any>
 }
+
+/** Desk source files that only need jQuery and frappe.*, evaluated as-is. */
+const DESK_WIDGET_SOURCES = [
+  "/assets/frappe/js/frappe/ui/tree.js",
+  // frappe.format / frappe.form.formatters (used by reports, list formatters, controls)
+  "/assets/frappe/js/frappe/form/formatters.js",
+]
+
+
 
 let ready: Promise<Any> | null = null
 let options: CompatOptions | null = null
@@ -71,7 +87,9 @@ export function ensureCompat(opts: CompatOptions): Promise<Any> {
 }
 
 async function startRuntime(frappe: Any, opts: CompatOptions): Promise<Any> {
-  await loadBoot(frappe)
+  // Chart/table libraries load alongside the session so widgets work as soon
+  // as the first script runs.
+  await Promise.all([loadBoot(frappe), loadWidgetLibs()])
   // Every installed app's `<app>.bundle.js` (the usual app_include_js), then
   // any bundles apps asked for explicitly.
   const bundles: string[] = []
@@ -82,6 +100,11 @@ async function startRuntime(frappe: Any, opts: CompatOptions): Promise<Any> {
     }
   }
   for (const b of opts.bundles ?? []) if (!bundles.includes(b)) bundles.push(b)
+  // Desk widgets that are plain jQuery over Frappe's own source, loaded from
+  // the bench so they match its version.
+  for (const src of DESK_WIDGET_SOURCES) {
+    try { await frappe.require(src) } catch (e) { console.warn(`[Petal compat] could not load ${src}`, e) }
+  }
   for (const bundle of bundles) {
     try {
       await frappe.require(bundle)
@@ -100,7 +123,7 @@ export function compatReady(): boolean {
 async function loadBoot(frappe: Any) {
   // A failed boot must reject: ensureCompat caches `ready`, and a half-empty
   // boot (no user, defaults or app versions) would stick for the whole tab.
-  const r = await frappe.xcall("frappe.sessions.get").catch((e: Any) => {
+  const r = await (options?.boot ? options.boot() : frappe.xcall("frappe.sessions.get")).catch((e: Any) => {
     console.error("[Petal compat] boot failed", e)
     throw e instanceof Error ? e : new Error("Could not load the session (frappe.sessions.get).")
   })
@@ -111,6 +134,7 @@ async function loadBoot(frappe: Any) {
   boot.user.defaults = boot.user.defaults ?? {}
   boot.user_info = boot.user_info ?? {}
   boot.desk_settings = boot.desk_settings ?? {}
+  boot.docs = boot.docs ?? []
   boot.__petal_loaded = true
   frappe.boot = boot
   frappe.sys_defaults = boot.sysdefaults
@@ -258,7 +282,12 @@ export type OpenResult = { frm: Form; docname: string }
  * (setup → before_load/onload → refresh → onload_post_render).
  * `name === "new"` creates a fresh local doc with defaults.
  */
-export async function openDoc(doctype: string, name: string): Promise<OpenResult> {
+export type OpenOptions = {
+  /** Resolve once the form is drawn; refresh handlers run after it (see Form.refresh). */
+  waitForLayout?: (frm: Form) => Promise<void>
+}
+
+export async function openDoc(doctype: string, name: string, opts: OpenOptions = {}): Promise<OpenResult> {
   const frappe = g.frappe
   await loadDoctype(doctype)
   let docname = name
@@ -273,7 +302,7 @@ export async function openDoc(doctype: string, name: string): Promise<OpenResult
     }
   }
   const frm = getForm(doctype)
-  await frm.refresh(docname)
+  await frm.refresh(docname, opts.waitForLayout ? { waitForLayout: opts.waitForLayout } : undefined)
   return { frm, docname }
 }
 
@@ -336,3 +365,8 @@ export function setFieldFromUI(frm: Form, fieldname: string, value: Any) {
 export function triggerButton(frm: Form, fieldname: string, cdt?: string, cdn?: string) {
   return frm.script_manager.trigger(fieldname, cdt, cdn).finally(notifyForms)
 }
+
+export { attachFormRoot } from "./form"
+export { CompatListView, listSettingsFor, runListOnload, runListRefresh, type ListAction, type ListSettings } from "./list"
+export { AppPage, openDeskPage, type DeskPage, type PageAction } from "./page"
+export { CompatQueryReport, openQueryReport, parseColumn as parseReportColumn, type ReportColumn } from "./report"

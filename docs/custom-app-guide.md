@@ -348,10 +348,25 @@ frappe_compat: {
   bundles: ["erpnext.bundle.js"],   // names from Frappe's assets.json
   // autoBundles: true,             // also load <app>.bundle.js for every installed app (default)
   // exclude: ["My Doctype"],       // keep Petal's plain form for these
+  // desk_controls: ["Data"],       // draw these field types with Desk's own control
+  // desk: {                        // screens to open in Frappe Desk instead
+  //   doctypes: ["Location"],
+  //   pages: ["point-of-sale"],
+  //   embed: false,                // true: show Desk inside Petal (needs a shared login)
+  // },
 }
 ```
 
-With it on, forms behave like Desk: `frappe.ui.form.on` events (setup → onload → refresh → field/child events → validate/before_save → after_save, submit/cancel), `frm.set_value`, `set_query`, `add_custom_button`, `toggle_display/reqd/enable`, `set_df_property`, `frm.call`, mapped documents, `frappe.ui.Dialog`, `msgprint/confirm/prompt`, the "Get Items From" picker, and saving through `frappe.desk.form.save.savedocs`. The runtime loads only when a form first opens (~170 KB gzipped, cached). See `docs/frappe-compat.md` for how it works and what isn't covered.
+With it on, forms behave like Desk: `frappe.ui.form.on` events (setup → onload → refresh → field/child events → validate/before_save → after_save, submit/cancel), `frm.set_value`, `set_query`, `add_custom_button`, `toggle_display/reqd/enable`, `set_df_property`, `frm.call`, mapped documents, `frappe.ui.Dialog`, `msgprint/confirm/prompt`, the "Get Items From" picker, and saving through `frappe.desk.form.save.savedocs`. Beyond forms, it also drives:
+
+- **Lists:** `frappe.listview_settings` status indicators, `add_fields`, formatters, default filters and `onload` actions/buttons.
+- **Reports:** script and query reports with their real filters, `onload` and `formatter`.
+- **Desk pages:** `frappe.pages[...]` at `/page/<name>`.
+- **Widgets:** charts (frappe-charts), `frappe.DataTable`, `frappe.ui.Tree`, the barcode scanner, and Desk's own controls for field types Petal has no input for.
+
+Screens listed under `desk` open in Desk instead. Set `NEXT_PUBLIC_PETAL_DESK_URL` to Desk's address.
+
+The runtime loads only for apps that turn it on, when a form, list, report or page first needs it (~170 KB gzipped, cached); Desk's controls bundle loads only when a screen uses one. See `docs/frappe-compat.md` for how it works and what isn't covered.
 
 ---
 

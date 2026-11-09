@@ -17,7 +17,7 @@ const neutral = cn(base, "border border-border bg-background text-foreground hov
 const primary = cn(base, "bg-primary text-primary-foreground hover:bg-primary/90")
 const danger = cn(base, "border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20")
 
-function Dropdown({ label, items, isPrimary, align = "right" }: { label: string; items: Array<{ label: string; onClick: () => void }>; isPrimary?: boolean; align?: "left" | "right" }) {
+export function Dropdown({ label, items, isPrimary, align = "right" }: { label: string; items: Array<{ label: string; onClick: () => void }>; isPrimary?: boolean; align?: "left" | "right" }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -167,4 +167,21 @@ function SectionHost({ el }: { el: HTMLElement }) {
     return () => { if (el.parentNode === host) host.removeChild(el) }
   }, [el])
   return <div ref={ref} className="petal-frappe-html rounded-lg border border-border px-4 py-3 text-sm" />
+}
+
+/**
+ * Loose and grouped buttons a script added (Desk's inner toolbar): loose ones
+ * as buttons, each group as one dropdown.
+ */
+export function CompatButtonBar({ buttons }: { buttons: Array<{ label: string; group?: string | undefined; onClick: () => void }> }) {
+  if (!buttons.length) return null
+  const loose = buttons.filter((b) => !b.group)
+  const groups = new Map<string, Array<{ label: string; onClick: () => void }>>()
+  for (const b of buttons) if (b.group) groups.set(b.group, [...(groups.get(b.group) ?? []), { label: b.label, onClick: b.onClick }])
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {loose.map((b) => <button key={b.label} type="button" className={neutral} onClick={b.onClick}>{b.label}</button>)}
+      {[...groups].map(([g, items]) => <Dropdown key={g} label={g} items={items} />)}
+    </div>
+  )
 }

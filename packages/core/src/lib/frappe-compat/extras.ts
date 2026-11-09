@@ -1,11 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Smaller Desk APIs form scripts reach for: status indicators, the
- * address/contact panels, file uploads, and chart/table widgets. Widgets that
- * need Desk's own rendering (frappe.Chart, DataTable, Tree) are inert stand-ins
- * so scripts that build them keep running.
+ * address/contact panels and file uploads. Charts, tables and the scanner are
+ * real (widgets.ts); the few Desk widgets Petal doesn't draw are inert
+ * stand-ins so scripts that build them keep running.
  */
 import { __, cstr, type Any } from "./env"
+import { installWidgets } from "./widgets"
+import { installDeskUtils } from "./desk-utils"
+import { installPages } from "./page"
 
 const g: Any = typeof window !== "undefined" ? window : globalThis
 
@@ -147,12 +150,12 @@ export function installExtras(frappe: Any, opts: { upload?: (file: File, meta: A
   for (const plugin of ["tab", "modal", "tooltip", "popover", "dropdown", "collapse", "alert", "button", "carousel", "scrollspy", "toast"]) {
     if (!g.$.fn[plugin]) g.$.fn[plugin] = function (this: Any) { return this }
   }
-  frappe.Chart = frappe.Chart ?? inert("frappe.Chart")
-  frappe.DataTable = frappe.DataTable ?? inert("DataTable")
-  g.DataTable = g.DataTable ?? frappe.DataTable
+  installDeskUtils(frappe)
+  installPages(frappe)
+  installWidgets(frappe)
+  // Replaced by Frappe's own tree.js once it loads (index.ts).
   frappe.ui.Tree = frappe.ui.Tree ?? inert("frappe.ui.Tree")
   frappe.ui.Capture = frappe.ui.Capture ?? inert("frappe.ui.Capture")
-  frappe.ui.Scanner = frappe.ui.Scanner ?? inert("frappe.ui.Scanner")
   frappe.ui.GroupBy = frappe.ui.GroupBy ?? inert("GroupBy")
   frappe.ui.FilterGroup = frappe.ui.FilterGroup ?? class {
     [k: string]: Any
@@ -164,7 +167,6 @@ export function installExtras(frappe: Any, opts: { upload?: (file: File, meta: A
   frappe.ui.form.ControlGeolocation = frappe.ui.form.ControlGeolocation ?? class {}
   frappe.ui.keys = frappe.ui.keys ?? { add_shortcut() {}, on() {}, off() {} }
   frappe.ui.toolbar = frappe.ui.toolbar ?? { clear_cache() {}, show_about() {} }
-  frappe.ui.make_app_page = () => ({})
   frappe.ui.get_print_settings = (_pdf: boolean, callback: Any) => callback && callback({})
   frappe.phone_call = frappe.phone_call ?? { handler: null }
   frappe.views.trees = frappe.views.trees ?? {}

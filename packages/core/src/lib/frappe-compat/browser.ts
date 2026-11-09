@@ -22,6 +22,8 @@ export function startCompat(config: FrappeCompatConfig) {
   const client = getFrappeClient()
   return ensureCompat({
     transport: (method, args) => client.rawCall(method, args),
+    // Desk's boot data comes from the desk page (frappe.sessions.get isn't whitelisted)
+    boot: () => client.getBoot(),
     navigate: (path, opts) => navigateImpl(path, opts),
     toast: (variant, title, detail) => toast[variant](title, detail),
     realtimeOn: async (event, cb) => {

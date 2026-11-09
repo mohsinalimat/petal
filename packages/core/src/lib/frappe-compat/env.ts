@@ -362,6 +362,8 @@ export function routeToPath(route: Any[]): string {
     case "workspace": case "workspaces": return `/workspace/${enc(rest[0] ?? "")}`
     case "": return "/"
     default: {
+      // A Desk page (boot.page_info lists them): set_route("point-of-sale")
+      if (g.frappe?.boot?.page_info?.[view!]) return "/page/" + route.map((r) => enc(String(r))).join("/")
       // A doctype slug or name, as Desk accepts: set_route("sales-invoice", "SINV-0001")
       const doctype = slugToDoctype(view!)
       if (doctype) return rest[0] ? `/form/${enc(doctype)}/${enc(rest[0])}` : `/list/${enc(doctype)}`
@@ -388,6 +390,7 @@ export function deskUrlToPath(href: string): string | null {
     if (!parts.length) return "/"
     if (["Form", "List", "Tree", "query-report", "Report"].includes(parts[0]!)) return routeToPath(parts)
     if (parts[0] === "query-report") return routeToPath(parts)
+    if (g.frappe?.boot?.page_info?.[parts[0]!]) return "/page/" + parts.map(encodeURIComponent).join("/")
     const doctype = slugToDoctype(parts[0]!)
     if (!doctype) return null
     if (parts[1] === "view") return routeToPath(["List", doctype])
@@ -401,6 +404,7 @@ export function deskUrlToPath(href: string): string | null {
 export function pathToRoute(pathname: string): string[] {
   const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent)
   switch (parts[0]) {
+    case "page": return parts.slice(1)
     case "form": return ["Form", parts[1] ?? "", parts[2] ?? ""]
     case "list": return ["List", parts[1] ?? "", "List"]
     case "tree": return ["Tree", parts[1] ?? ""]
@@ -483,6 +487,8 @@ export function installEnv(): Any {
   frappe.help = { help_links: {} }
   frappe.form = { link_formatters: {}, formatters: {}, get_formatter: () => (v: Any) => cstr(v) }
   frappe.views = { formview: {}, trees: {}, list_view: {}, ListView: class {}, TreeView: class {}, InteractionComposer: class { constructor() { frappe.msgprint(__("Email composer is not available in Petal yet.")) } } }
+  // translate.js: frappe._ is __ (Desk code also hangs helpers off it)
+  frappe._ = frappe._ ?? ((txt: string, replace?: Any, context?: string | null) => __(txt, replace, context ?? undefined))
   frappe.listview_settings = frappe.listview_settings ?? {}
   frappe.treeview_settings = frappe.treeview_settings ?? {}
   frappe.query_reports = frappe.query_reports ?? {}

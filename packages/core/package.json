@@ -22,6 +22,9 @@
     "@petal/sdk": "workspace:*",
     "@petal/ui": "workspace:*",
     "@tanstack/react-query": "^5.56.2",
+    "frappe-charts": "2.0.0-rc27",
+    "frappe-datatable": "1.19.0",
+    "html5-qrcode": "2.3.8",
     "jquery": "3.7.1",
     "lucide-react": "^0.468.0",
     "moment": "2.30.1",
@@ -30,6 +33,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io-client": "^4.7.5",
+    "sortablejs": "1.15.6",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

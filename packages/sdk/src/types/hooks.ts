@@ -173,6 +173,29 @@ export interface FrappeCompatConfig {
   autoBundles?: boolean
   /** Doctypes that keep Petal's plain form even when the runtime is on. */
   exclude?: string[]
+  /**
+   * Field types drawn with Desk's own control instead of Petal's input, e.g.
+   * ["Data"] when an app overrides frappe.ui.form.ControlData. Types Petal has
+   * no input for (Geolocation, Signature, Barcode, Duration…) always are.
+   */
+  desk_controls?: string[]
+  /**
+   * Screens whose scripts are too tied to Desk to run in Petal. They open in
+   * Frappe Desk instead (set NEXT_PUBLIC_PETAL_DESK_URL to Desk's address).
+   */
+  desk?: DeskFallbackConfig
+}
+
+export interface DeskFallbackConfig {
+  /** Doctypes whose forms open in Desk. */
+  doctypes?: string[]
+  /** Desk pages (frappe.pages names) that open in Desk rather than in Petal. */
+  pages?: string[]
+  /**
+   * Show Desk inside Petal (iframe) instead of a link. Only works when the
+   * browser is signed in to Desk too (same parent domain or SSO).
+   */
+  embed?: boolean
 }
 
 export interface PetalHooks {

@@ -27,6 +27,7 @@ export function notifyForms() {
   scheduled = true
   queueMicrotask(() => {
     scheduled = false
+    for (const f of forms.values()) f.sync_desk_controls()
     formListeners.forEach((l) => l())
   })
 }
@@ -36,14 +37,34 @@ export function subscribeForms(l: Listener) {
 }
 
 /** A fields_dict entry — the parts of frappe.ui.form.Control scripts touch. */
+/** Longest the first refresh waits for Petal to draw the form. */
+const LAYOUT_WAIT_MS = 3000
+
+const LAYOUT_TYPES = ["Section Break", "Column Break", "Tab Break"]
+const attrValue = (v: string) => v.replace(/["\\]/g, "\\$&")
+
+/** The rendered element for `fieldname` inside the form, once Petal has drawn it. */
+function liveControl(frm: Any, fieldname: string, fieldtype?: string): HTMLElement | null {
+  const root: HTMLElement | null = frm?.root ?? null
+  if (!root || !root.isConnected) return null
+  const v = attrValue(fieldname)
+  if (fieldtype === "Section Break") return root.querySelector(`.form-section[data-fieldname="${v}"]`)
+  if (fieldtype === "Column Break") return root.querySelector(`.form-column[data-fieldname="${v}"]`)
+  if (fieldtype === "Tab Break") return root.querySelector(`[data-tab-fieldname="${v}"]`)
+  return root.querySelector(`.frappe-control[data-fieldname="${v}"]`)
+}
+
 class FormField {
   frm: Any
   fieldname: string
   doctype: string
-  wrapper: HTMLElement
-  $wrapper: Any
-  input: HTMLElement
-  $input: Any
+  fieldtype: string
+  // Detached stand-ins, used until Petal renders the field (and always for
+  // HTML fields, whose wrapper Petal adopts into the page).
+  _wrapper: Any
+  _$wrapper: Any
+  _input: Any
+  _$input: Any
   label_area: HTMLElement
   get_query: Any
   grid: Any
@@ -52,13 +73,20 @@ class FormField {
   constructor(frm: Any, df: Any) {
     this.frm = frm
     this.fieldname = df.fieldname
+    this.fieldtype = df.fieldtype
     this.doctype = frm.doctype
     this.wrapper = mkEl()
     this.$wrapper = g.$(this.wrapper)
     this.input = mkEl("input")
     this.$input = g.$(this.input)
     this.label_area = mkEl("label")
-    if (df.fieldtype === "HTML" && df.options) this.wrapper.innerHTML = df.options
+    if (df.fieldtype === "HTML") {
+      // Desk's HTML control *is* the .frappe-control element; Petal adopts it as-is.
+      this.wrapper.classList?.add("frappe-control")
+      this.wrapper.setAttribute?.("data-fieldname", df.fieldname)
+      this.wrapper.setAttribute?.("data-fieldtype", "HTML")
+      if (df.options) this.wrapper.innerHTML = df.options
+    }
     if (TABLE_FIELDS.includes(df.fieldtype)) this.grid = new Grid(frm, this)
     const part = () => {
       const $w = g.$(mkEl())
@@ -74,6 +102,67 @@ class FormField {
       this.wrapper = this.$wrapper
       this.head = g.$(mkEl())
     }
+  }
+
+  // wrapper / $wrapper / input / $input point at Petal's rendered control when
+  // it's on screen, so `frm.fields_dict.x.$wrapper.find(...)`, `$input.on(...)`
+  // etc. act on what the user sees.
+  private get liveEl(): HTMLElement | null {
+    return this.fieldtype === "HTML" ? null : liveControl(this.frm, this.fieldname, this.fieldtype)
+  }
+  get wrapper(): Any {
+    const el = this.liveEl
+    if (!el) return this._wrapper
+    return LAYOUT_TYPES.includes(this.fieldtype) ? g.$(el) : el
+  }
+  set wrapper(v: Any) { this._wrapper = v }
+  get $wrapper(): Any { const el = this.liveEl; return el ? g.$(el) : this._$wrapper }
+  set $wrapper(v: Any) { this._$wrapper = v }
+  get input(): Any {
+    const el = this.liveEl?.querySelector("input:not([type=checkbox][hidden]), select, textarea")
+    return el ?? this._input
+  }
+  set input(v: Any) { this._input = v }
+  get $input(): Any { const el = this.liveEl?.querySelector("input, select, textarea"); return el ? g.$(el) : this._$input }
+  set $input(v: Any) { this._$input = v }
+
+  /** Desk's own control for this field (field types Petal doesn't draw). */
+  deskControl: Any = null
+
+  /**
+   * The element of Desk's real control for this field, created on first use
+   * (Desk's controls bundle loads on demand; null until it has).
+   */
+  mountDeskControl(): HTMLElement | null {
+    if (this.deskControl) return this.deskControl.wrapper ?? null
+    const frappe = g.frappe
+    if (!frappe.ui.form.__petal_desk_controls) return null
+    const holder = mkEl()
+    try {
+      const c = frappe.ui.form.make_control({
+        df: this.df, parent: holder, frm: this.frm, doctype: this.frm.doctype, docname: this.frm.docname,
+        doc: this.frm.doc, render_input: true, only_input: false,
+      })
+      c.doc = this.frm.doc
+      c.docname = this.frm.docname
+      c.refresh?.()
+      this.deskControl = c
+      return c.wrapper ?? holder.firstElementChild as HTMLElement ?? null
+    } catch (e) {
+      console.error(`[Petal compat] Desk control for ${this.fieldname}`, e)
+      return null
+    }
+  }
+
+  /** Bring Desk's control up to date with the document (Desk's refresh_field). */
+  refreshDeskControl() {
+    const c = this.deskControl
+    if (!c) return
+    c.__petal_value = this.frm.doc?.[this.fieldname]
+    c.doc = this.frm.doc
+    c.docname = this.frm.docname
+    c.df = this.df
+    try { c.refresh?.() } catch (e) { console.warn(`[Petal compat] refresh ${this.fieldname}`, e) }
   }
 
   /** The live docfield for the open document (where set_df_property writes). */
@@ -123,7 +212,7 @@ class GridField {
 class Grid {
   frm: Any
   field: FormField
-  wrapper: Any
+  _wrapper: Any
   grid_rows: Any[] = []
   grid_rows_by_docname: Record<string, Any> = {}
   fieldsMap: Record<string, GridField> = {}
@@ -135,9 +224,16 @@ class Grid {
   constructor(frm: Any, field: FormField) {
     this.frm = frm
     this.field = field
-    this.wrapper = g.$(mkEl())
+    this._wrapper = g.$(mkEl())
     this.grid_buttons = g.$(mkEl())
   }
+
+  /** The rendered table (jQuery), once on screen. */
+  get wrapper(): Any {
+    const el = liveControl(this.frm, this.field.fieldname)
+    return el ? g.$(el) : this._wrapper
+  }
+  set wrapper(v: Any) { this._wrapper = v }
 
   get df() { return this.field.df }
   get doctype() { return this.field.df?.options }
@@ -388,6 +484,8 @@ export class Form {
   timeline: Any
   wrapper: HTMLElement
   $wrapper: Any
+  /** Petal's rendered form, while it's mounted (see attachFormRoot). */
+  root: HTMLElement | null = null
   read_only = false
   action_perm_type_map = { Create: "create", Save: "write", Submit: "submit", Update: "submit", Cancel: "cancel", Amend: "amend", Delete: "delete" }
   ;[key: string]: Any
@@ -412,7 +510,7 @@ export class Form {
     this.states = { refresh: () => {} }
     this.attachments = { get_attachments: () => g.frappe.model.get_docinfo(this.doctype, this.docname)?.attachments ?? [] }
     this.viewers = { parent: g.$(mkEl()) }
-    this.undo_manager = { erase_history: () => {} }
+    this.undo_manager = { erase_history: () => {}, record_change: () => {}, undo: () => {}, redo: () => {} }
   }
 
   // ── setup & lifecycle (form.js) ──────────────────────────────────────────
@@ -484,7 +582,13 @@ export class Form {
   }
 
   /** Open (or re-render) a document. Returns once refresh handlers have run. */
-  async refresh(docname?: string): Promise<void> {
+  /**
+   * `waitForLayout`: called once the document is loaded and its onload has
+   * run, before refresh. Petal resolves it after drawing the form, so refresh
+   * handlers find the fields in the DOM as they would in Desk (where the
+   * layout exists before refresh).
+   */
+  async refresh(docname?: string, opts?: { waitForLayout?: (frm: Form) => Promise<void> }): Promise<void> {
     const switched = !!docname && docname !== this.docname
     if (docname) this.docname = docname
     g.cur_frm = this
@@ -500,6 +604,10 @@ export class Form {
       await this.script_manager.trigger("before_load", this.doctype, this.docname).catch(() => {})
       await this.script_manager.trigger("onload").catch(() => {})
       this.opendocs[this.docname] = true
+      if (opts?.waitForLayout) {
+        notifyForms()
+        await Promise.race([opts.waitForLayout(this), new Promise((r) => setTimeout(r, LAYOUT_WAIT_MS))]).catch(() => {})
+      }
       await this.render_form(switched)
       await g.frappe.after_ajax()
       await this.trigger_link_fields()
@@ -516,6 +624,7 @@ export class Form {
     for (const t of this.grids) t.grid.sync_rows()
     try { g.$(document).trigger("form-refresh", [this]) } catch { /* noop */ }
     await this.script_manager.trigger("refresh").catch(() => {})
+    for (const f of Object.values(this.fields_dict) as Any[]) f.refreshDeskControl?.()
     if (this.cscript.is_onload) await this.script_manager.trigger("onload_post_render").catch(() => {})
     if (g.frappe.route_hooks.after_load) {
       const cb = g.frappe.route_hooks.after_load
@@ -735,7 +844,20 @@ export class Form {
   get_perm(permlevel: number, access_type: string) { return this.perm[permlevel] ? this.perm[permlevel][access_type] : null }
   get_field(field: string) { return this.fields_dict[field] }
   get_title() { return this.meta?.title_field ? this.doc[this.meta.title_field] : String(this.doc?.name) }
-  refresh_field(fname: string) { notifyForms(); return fname }
+  refresh_field(fname: string) { this.fields_dict[fname]?.refreshDeskControl?.(); notifyForms(); return fname }
+
+  /**
+   * Desk controls follow the model like Desk's: refreshed when the document
+   * changes or their own value changes, not on every edit elsewhere (which
+   * would reset text being typed).
+   */
+  sync_desk_controls() {
+    for (const f of Object.values(this.fields_dict) as Any[]) {
+      const c = f.deskControl
+      if (!c) continue
+      if (c.doc !== this.doc || c.docname !== this.docname || c.__petal_value !== this.doc?.[f.fieldname]) f.refreshDeskControl()
+    }
+  }
   refresh_fields() { for (const t of this.grids) t.grid.sync_rows(); notifyForms() }
   trigger(event: string, doctype?: string, docname?: string) { return this.script_manager.trigger(event, doctype, docname) }
   enable_save() { this.saveDisabled = false; notifyForms() }
@@ -1307,6 +1429,8 @@ function makeDashboard(frm: Form): Any {
     wrapper: g.$(mkEl()),
     data: {},
     reset() {
+      d.chart = null
+      d.graphEl = null
       frm.headline = null
       frm.dashboardIndicators = []
       frm.dashboardProgress = []
@@ -1334,7 +1458,24 @@ function makeDashboard(frm: Form): Any {
       notifyForms()
       return g.$(el)
     },
-    render_graph() {},
+    // dashboard.js render_graph: one chart section under the dashboard.
+    render_graph(args: Any) {
+      if (!d.graphEl) {
+        d.graphEl = mkEl()
+        d.graphEl.className = "form-graph petal-compat-graph"
+        frm.dashboardSections.push(d.graphEl)
+      }
+      d.graphEl.innerHTML = ""
+      Object.assign(args, {
+        type: args.type || "line",
+        colors: args.colors || ["green"],
+        truncateLegends: 1,
+        axisOptions: { shortenYAxisNumbers: 1, numberFormatter: g.frappe.utils.format_chart_axis_number, ...(args.axisOptions ?? {}) },
+      })
+      d.chart = new g.frappe.Chart(d.graphEl, args)
+      notifyForms()
+      return d.chart
+    },
     render_heatmap() {},
     set_badge_count() {},
     add_transactions() {},
@@ -1431,6 +1572,31 @@ export function installForm(frappe: Any) {
 const forms = new Map<string, Form>()
 
 /** The cached Form for a doctype (created on first open, like Desk). */
+/**
+ * Point frm.wrapper / $wrapper / page.wrapper / layout.wrapper at Petal's
+ * rendered form (or back to detached stand-ins with `null`), so scripts that
+ * search the form's DOM find its real fields.
+ */
+export function attachFormRoot(frm: Form, el: HTMLElement | null) {
+  const f: Any = frm
+  f.__detached ??= { wrapper: f.wrapper, $wrapper: f.$wrapper, page: f.page.wrapper, layout: f.layout.wrapper, body: f.page.body }
+  frm.root = el
+  if (el) {
+    const $el = g.$(el)
+    f.wrapper = el
+    f.$wrapper = $el
+    f.page.wrapper = $el
+    f.page.body = $el
+    f.layout.wrapper = $el
+  } else {
+    f.wrapper = f.__detached.wrapper
+    f.$wrapper = f.__detached.$wrapper
+    f.page.wrapper = f.__detached.page
+    f.page.body = f.__detached.body
+    f.layout.wrapper = f.__detached.layout
+  }
+}
+
 export function getForm(doctype: string): Form {
   let f = forms.get(doctype)
   if (!f) {

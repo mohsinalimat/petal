@@ -77,9 +77,10 @@ export function installModel(frappe: Any) {
       return Array.isArray(d) ? d : [d]
     },
     set_user_default_local(key: string, value: Any) { frappe.boot.user.defaults[key] = value },
+    // Desk (v15) has no server call for this; frappe.client.set_default isn't whitelisted.
     set_default(key: string, value: Any) {
       frappe.boot.user.defaults[key] = value
-      return frappe.call({ method: "frappe.client.set_default", args: { key, value: value || "" } })
+      return Promise.resolve()
     },
     get_default(key: string) {
       const defaults = frappe.boot.user.defaults ?? {}
@@ -836,7 +837,15 @@ export function installModel(frappe: Any) {
       return levels
     },
     is_visible: () => true,
-    get_field_display_status: (df: Any) => (df.hidden ? "None" : "Write"),
+    // perm.js get_field_display_status, without per-permlevel rules: hidden →
+    // None; read-only fields, or anything but allow_on_submit on a submitted /
+    // cancelled doc → Read; otherwise Write.
+    get_field_display_status: (df: Any, doc?: Any) => {
+      if (g.cint(df?.hidden)) return "None"
+      if (g.cint(df?.read_only)) return "Read"
+      if (doc && g.cint(doc.docstatus) > 0 && !(g.cint(doc.docstatus) === 1 && g.cint(df?.allow_on_submit))) return "Read"
+      return "Write"
+    },
     filter_allowed_docs_for_doctype: (perms: Any[] = [], doctype: string) => {
       const allowed = perms.filter((p) => !p.applicable_for || p.applicable_for === doctype)
       return { allowed_records: allowed.map((p) => p.doc), default_doc: allowed.find((p) => p.is_default)?.doc ?? null }

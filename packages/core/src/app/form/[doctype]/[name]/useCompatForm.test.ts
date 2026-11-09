@@ -12,15 +12,17 @@ async function open(name: string) {
   await act(async () => gates[name]!())
 }
 
-vi.mock("@/lib/frappe-compat/browser", () => ({ startCompat: async () => {} }))
-vi.mock("@/lib/frappe-compat/request", () => ({ waitForPending: async () => {} }))
-vi.mock("@/lib/frappe-compat", () => ({
+// The runtime the hook loads on first use.
+const runtime = {
+  startCompat: async () => {},
+  waitForPending: async () => {},
   openDoc: (_dt: string, name: string) => new Promise((resolve) => {
     gates[name] = () => { form.docname = name === "new" ? "new-sales-invoice-1" : name; form.doc = { name: form.docname, docstatus: 0 }; resolve({ frm: form }) }
   }),
   effectiveFields: () => [], effectiveChildFields: () => ({}), snapshotDoc: (d: any) => ({ ...d }),
   subscribeForms: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn) }, reloadDoc: async () => {}, searchLink: async () => [], setFieldFromUI: async () => {}, triggerButton: () => {},
-}))
+}
+vi.mock("./compat-runtime", () => ({ loadRuntime: async () => runtime, loadedRuntime: () => runtime }))
 
 ;(window as any).locals = { DocType: { "Sales Invoice": { name: "Sales Invoice" } } }
 ;(window as any).frappe = { get_indicator: () => null }

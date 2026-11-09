@@ -196,6 +196,16 @@ export class FrappeClient {
     return { status: res.status, data }
   }
 
+  /** Desk's boot data (frappe.boot) for the signed-in session; see BOOT_PATH. */
+  async getBoot(): Promise<Record<string, unknown>> {
+    if (this.gate) await this.gate
+    const res = await fetch(`${this.baseUrl}/auth/boot`, { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" })
+    if (!res.ok) throw new Error(res.status === 401 ? "Not logged in" : `Could not load the session (${res.status})`)
+    const json = (await res.json()) as { message?: Record<string, unknown> }
+    if (!json.message || typeof json.message !== "object") throw new Error("Could not load the session")
+    return json.message
+  }
+
   async initCSRF(): Promise<void> {
     if (this.csrfToken) return
     if (!this.csrfFetchPromise) {

@@ -53,7 +53,7 @@ export {
 export { cn } from "./lib/utils"
 
 export { DocList } from "./components/doc-list"
-export type { DocListProps, DocListMeta, DocListFetchParams, DocListFilter, ListMetaField } from "./components/doc-list"
+export type { DocListProps, DocListMeta, DocListFetchParams, DocListFilter, ListMetaField, DocListIndicator, DocListAction } from "./components/doc-list"
 
 // ---------------------------------------------------------------------------
 // Frappe field inputs

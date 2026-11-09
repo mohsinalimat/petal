@@ -9,6 +9,7 @@
  * like `d.fields_dict.preview.$wrapper.html(...)` works unchanged.
  */
 import { __, cint, cstr, type Any } from "./env"
+import { whenConnected } from "./widgets"
 
 const g: Any = typeof window !== "undefined" ? window : globalThis
 
@@ -314,6 +315,14 @@ export class CompatDialog extends CompatFieldGroup {
     g.cur_dialog = this
     emit()
     this.onshow?.()
+    // Desk fires on_page_show once the modal is on screen ("shown.bs.modal");
+    // scripts use it to draw into the dialog's fields.
+    if (this.on_page_show) {
+      const el = this.$body?.[0]
+      const run = () => { if (this.display) try { this.on_page_show() } catch (e) { console.error(e) } }
+      if (el && typeof el.isConnected === "boolean") whenConnected(el, run)
+      else setTimeout(run, 0)
+    }
     return this
   }
 
@@ -325,6 +334,7 @@ export class CompatDialog extends CompatFieldGroup {
     uiStore.remove(id)
     if (g.cur_dialog === this) g.cur_dialog = null
     try { this.onhide && this.onhide() } catch (e) { console.error(e) }
+    try { this.on_hide && this.on_hide() } catch (e) { console.error(e) }
   }
 
   cancel() { this.hide() }
@@ -532,7 +542,36 @@ export function installUI(frappe: Any) {
     eval(code: string) { if (code) new Function(code)() },
     is_touchscreen: () => false,
     scroll_to_bottom() {},
-    set_unique_id(el: Any) { el.id = el.id || "petal-" + Math.random().toString(36).slice(2) },
+    id_count: 0,
+    get_unique_id() { return "unique-" + frappe.dom.id_count++ },
+    // dom.js remove_script_and_style
+    remove_script_and_style(txt: string) {
+      if (typeof DOMParser === "undefined") return txt
+      const doc = new DOMParser().parseFromString(txt, "text/html")
+      let found = !!doc.head.innerHTML
+      for (const tag of ["script", "style", "noscript", "title", "meta", "base", "head"]) {
+        for (const el of Array.from(doc.body.getElementsByTagName(tag))) { found = true; el.remove() }
+      }
+      for (const el of Array.from(doc.body.getElementsByTagName("link"))) {
+        if ((el.getAttribute("rel") ?? "").toLowerCase().trim() === "stylesheet") { found = true; el.remove() }
+      }
+      return found ? doc.body.innerHTML : txt
+    },
+    is_element_in_viewport(el: Any, tolerance = 0) {
+      const node = el?.jquery ? el[0] : el
+      if (!node?.getBoundingClientRect) return false
+      const r = node.getBoundingClientRect()
+      return r.top + tolerance >= 0 && r.left + tolerance >= 0
+        && r.bottom - tolerance <= (window.innerHeight || document.documentElement.clientHeight)
+        && r.right - tolerance <= (window.innerWidth || document.documentElement.clientWidth)
+    },
+    is_element_in_modal: (el: Any) => Boolean(g.$(el).parents(".modal, [role=dialog]").length),
+    set_unique_id(el: Any) {
+      const node = el?.jquery ? el[0] : el
+      if (!node) return ""
+      node.id = node.id || "petal-" + Math.random().toString(36).slice(2)
+      return node.id
+    },
   })
 
   frappe.ui.form.MultiSelectDialog = MultiSelectPicker

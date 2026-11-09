@@ -13,7 +13,9 @@ import { Sidebar } from "@/components/shell/Sidebar"
 import { Navbar } from "@/components/shell/Navbar"
 import { Toaster } from "@/components/shell/Toaster"
 import { ErrorBoundary } from "@/components/shell/ErrorBoundary"
-import { CompatHost } from "@/components/compat/CompatHost"
+import dynamic from "next/dynamic"
+// Dialogs/messages for the Frappe runtime; loaded only when an app turns it on.
+const CompatHost = dynamic(() => import("@/components/compat/CompatHost").then((m) => m.CompatHost), { ssr: false })
 import { fetchSetupStatus, isSystemManager } from "@/lib/setup/setup-wizard"
 
 const SETUP_PATH = "/setup-wizard"
