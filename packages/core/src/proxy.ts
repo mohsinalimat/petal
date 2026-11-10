@@ -27,7 +27,7 @@ function randomNonce(): string {
   return btoa(binary)
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const runtime = runtimeOrigins(req)
   if (runtime === null) {
     return new NextResponse("Unknown tenant", { status: 404, headers: { "Content-Type": "text/plain" } })

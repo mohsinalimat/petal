@@ -58,10 +58,10 @@ function getEffectivePathMap(req: NextRequest): Record<string, string> {
   return { ...EXACT_MAP, ...overrides, ...(getBackend(req)?.pathMap ?? {}) }
 }
 
-async function proxy(
-  req: NextRequest,
-  { params }: { params: { path: string[] } },
-): Promise<NextResponse> {
+type RouteCtx = { params: Promise<{ path: string[] }> }
+
+async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  const params = await ctx.params
   const backend = getBackend(req)
   if (!backend) return NextResponse.json({ error: "Unknown tenant" }, { status: 404 })
   const { frappeUrl, frappeSiteHost } = backend
@@ -214,8 +214,8 @@ async function proxy(
   }
 }
 
-export async function GET(req: NextRequest, ctx: { params: { path: string[] } }) { return proxy(req, ctx) }
-export async function POST(req: NextRequest, ctx: { params: { path: string[] } }) { return proxy(req, ctx) }
-export async function PUT(req: NextRequest, ctx: { params: { path: string[] } }) { return proxy(req, ctx) }
-export async function DELETE(req: NextRequest, ctx: { params: { path: string[] } }) { return proxy(req, ctx) }
-export async function PATCH(req: NextRequest, ctx: { params: { path: string[] } }) { return proxy(req, ctx) }
+export async function GET(req: NextRequest, ctx: RouteCtx) { return proxy(req, ctx) }
+export async function POST(req: NextRequest, ctx: RouteCtx) { return proxy(req, ctx) }
+export async function PUT(req: NextRequest, ctx: RouteCtx) { return proxy(req, ctx) }
+export async function DELETE(req: NextRequest, ctx: RouteCtx) { return proxy(req, ctx) }
+export async function PATCH(req: NextRequest, ctx: RouteCtx) { return proxy(req, ctx) }

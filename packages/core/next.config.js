@@ -12,7 +12,7 @@ const petalConfig = fs.existsSync(path.join(__dirname, "petal.config.ts"))
 
 // Origins that are allowed to serve remote app bundles (petal.hooks.js) and their
 // CSS. Computed once at server start from petal.config.ts + petal.apps.json (if
-// present) and fed to middleware.ts as an env var, since CSP is enforced there.
+// present) and fed to proxy.ts as an env var, since CSP is enforced there.
 // Adding an app via `petal app add` while the server is running takes effect for
 // app loading immediately (petal.apps.json is hot-reloaded), but its origin isn't
 // trusted by the CSP header until the next restart — fail closed, not open.
@@ -91,14 +91,10 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["@petal/ui", "lucide-react"],
   },
-  webpack: (config, { dev }) => {
-    // Polling burns a full CPU core and triggers spurious recompiles; it's only
-    // needed when native file events don't work (e.g. Docker bind mounts).
-    if (dev && process.env.PETAL_WATCH_POLL === "1") {
-      config.watchOptions = { poll: 1000, aggregateTimeout: 300 }
-    }
-    return config
-  },
+  // Polling burns CPU and adds latency; it's only needed when native file
+  // events don't work (e.g. Docker bind mounts). Next 16 builds with Turbopack,
+  // which refuses a custom webpack() hook, so this uses the bundler-neutral option.
+  ...(process.env.PETAL_WATCH_POLL === "1" ? { watchOptions: { pollIntervalMs: 1000 } } : {}),
 }
 
 module.exports = withPetal(petalConfig)(nextConfig)

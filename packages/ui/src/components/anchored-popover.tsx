@@ -8,9 +8,9 @@ const EDGE = 8
 
 export interface AnchoredPopoverProps {
   /** Element the popover is attached to (usually the trigger button). */
-  anchorRef: RefObject<HTMLElement>
+  anchorRef: RefObject<HTMLElement | null>
   /** Ref to the popover element, for outside-click checks. */
-  panelRef: RefObject<HTMLDivElement>
+  panelRef: RefObject<HTMLDivElement | null>
   children: ReactNode
   className?: string
   role?: string

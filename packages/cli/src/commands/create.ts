@@ -68,14 +68,14 @@ export async function createApp(appName?: string): Promise<void> {
     },
     peerDependencies: {
       "@petal/sdk": "*",
-      react: "^18.0.0",
-      "react-dom": "^18.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
     },
     devDependencies: {
       "@petal/sdk":          sdkPkg,
       "@petal/ui":           uiPkg,
-      "@types/react":        "^18.0.0",
-      "@types/react-dom":    "^18.0.0",
+      "@types/react":        "^19.0.0",
+      "@types/react-dom":    "^19.0.0",
       "@types/node":         "^20.0.0",
       "@vitejs/plugin-react":"^4.0.0",
       autoprefixer:          "^10.4.0",
