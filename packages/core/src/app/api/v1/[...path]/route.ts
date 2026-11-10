@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getRuntimeConfig } from "@/lib/config/runtime-config"
 import { backendFor } from "@/lib/config/tenants"
 import {
-  CSRF_PATH, EXACT_MAP, extractCsrfToken, rewritePrintHtml, stripCookieDomain, translatePath,
+  BOOT_PATH, CSRF_PATH, EXACT_MAP, extractBootJson, extractCsrfToken, rewritePrintHtml, stripCookieDomain, translatePath,
 } from "@/lib/frappe/proxy-paths"
 
 /** Single-tenant backend, or the tenant's when PETAL_TENANTS is set (null = unknown host). */
@@ -18,6 +18,8 @@ const DROP_REQUEST_HEADERS = new Set([
 const DROP_RESPONSE_HEADERS = new Set([
   "connection", "transfer-encoding", "keep-alive",
 ])
+
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 
 async function buildResponse(frappeRes: Response): Promise<NextResponse> {
   const resHeaders = new Headers()
@@ -41,6 +43,12 @@ async function buildResponse(frappeRes: Response): Promise<NextResponse> {
     resHeaders.append("Set-Cookie", stripCookieDomain(cookie))
   })
 
+  // 304 (browser revalidating a cached image/asset), 204 etc. must not carry a
+  // body — the Response constructor throws on one, which turned every cache
+  // revalidation of /files/* into a 500 and a broken <img>.
+  if (NULL_BODY_STATUSES.has(frappeRes.status)) {
+    return new NextResponse(null, { status: frappeRes.status, headers: resHeaders })
+  }
   const resBody = await frappeRes.arrayBuffer()
   return new NextResponse(resBody, { status: frappeRes.status, headers: resHeaders })
 }
@@ -123,6 +131,27 @@ async function proxy(
         : NextResponse.json({ error: "No CSRF token — session is not logged in" }, { status: 401 })
     } catch (err) {
       console.error("[Petal Proxy] csrf fetch failed →", String(err))
+      return NextResponse.json({ error: "Request failed" }, { status: 502 })
+    }
+  }
+
+  // auth/boot — Desk's boot data, read from the desk page as Desk itself does
+  // (frappe.sessions.get isn't whitelisted). For the Frappe-compatible runtime.
+  if (neutralPath === BOOT_PATH) {
+    try {
+      const frappeRes = await fetch(`${frappeUrl}/app`, {
+        headers: { cookie: reqHeaders["cookie"] ?? "", host: frappeSiteHost, accept: "text/html" },
+        redirect: "manual",
+        cache: "no-store",
+      })
+      const boot = frappeRes.ok ? extractBootJson(await frappeRes.text()) : null
+      if (!boot) return NextResponse.json({ error: "No boot data — session is not logged in" }, { status: 401 })
+      return new NextResponse(`{"message":${boot}}`, {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      })
+    } catch (err) {
+      console.error("[Petal Proxy] boot fetch failed →", String(err))
       return NextResponse.json({ error: "Request failed" }, { status: 502 })
     }
   }

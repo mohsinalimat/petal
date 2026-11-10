@@ -6,6 +6,7 @@ import Link from "next/link"
 import type { FormSlotComponents } from "@petal/sdk"
 import { GenericForm } from "./GenericForm"
 import { PageLoader } from "@/components/shell/PageLoader"
+import { DeskFallback } from "@/components/compat/DeskFallback"
 
 const SlotFallback = () => (
   <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -38,6 +39,8 @@ export default function FormPage() {
   const override = hooks.form_overrides?.[doctype]
   const slots    = hooks.form_slots?.[doctype]
   const OverrideComponent = useMemo(() => (override ? lazy(override) : null), [override])
+  const desk = hooks.frappe_compat?.enabled ? hooks.frappe_compat.desk : undefined
+  const inDesk = !!desk?.doctypes?.includes(doctype)
 
   return (
     <div className="max-w-5xl space-y-4 min-w-0">
@@ -56,7 +59,9 @@ export default function FormPage() {
         )}
       </div>
 
-      {OverrideComponent ? (
+      {inDesk ? (
+        <DeskFallback doctype={doctype} name={name} {...(desk?.embed ? { embed: true } : {})} />
+      ) : OverrideComponent ? (
         <Suspense fallback={<PageLoader label="Loading custom form…" />}>
           <OverrideComponent docname={name} />
         </Suspense>

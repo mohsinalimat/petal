@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { FieldWrapper } from "./FieldWrapper"
-import type { LayoutSection, MetaField } from "./types"
+import type { FormFieldExtras, LayoutSection, LinkSearch, MetaField } from "./types"
 import type { FieldBehavior } from "@petal/sdk"
 
 function evalDepends(expr: string | undefined, doc: Record<string, unknown>): boolean {
@@ -15,17 +15,18 @@ function evalDepends(expr: string | undefined, doc: Record<string, unknown>): bo
   }
 }
 
-export function SectionBlock({ section, values, isEditing, onChange, fieldBehaviors, childMetas, onLinkSearch, missingFields, currency = "USD", skipFields }: {
+export function SectionBlock({ section, values, isEditing, onChange, fieldBehaviors, childMetas, onLinkSearch, missingFields, currency = "USD", skipFields, extras }: {
   section: LayoutSection
   values: Record<string, unknown>
   isEditing: boolean
   onChange: (fn: string, v: unknown) => void
   fieldBehaviors: Record<string, FieldBehavior>
   childMetas?: Record<string, MetaField[]>
-  onLinkSearch?: (doctype: string, query: string) => Promise<{ value: string; description?: string }[]>
+  onLinkSearch?: LinkSearch
   missingFields?: Set<string>
   currency?: string
   skipFields?: Set<string>
+  extras?: FormFieldExtras
 }) {
   const [open, setOpen] = useState(true)
 
@@ -77,8 +78,10 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
   }
   const gridClass = GRID_COLS[colCount] ?? "grid-cols-1 md:grid-cols-4"
 
+  // Desk's class names and data-fieldname, so Frappe scripts' selectors
+  // ([data-fieldname=x], .section-head, .form-column) find this section.
   return (
-    <div className="border border-border bg-background">
+    <div className="form-section border border-border bg-background" {...(section.fieldname ? { "data-fieldname": section.fieldname } : {})}>
       {hasLabel ? (
         <button
           type="button"
@@ -87,7 +90,7 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
             section.collapsible ? "cursor-pointer hover:bg-muted/50" : "cursor-default"
           }`}
         >
-          <span className="text-xs font-semibold text-foreground/80 uppercase tracking-widest">{section.label}</span>
+          <span className="section-head text-xs font-semibold text-foreground/80 uppercase tracking-widest">{section.label}</span>
           {section.collapsible && (
             <svg className={`w-3.5 h-3.5 text-muted-foreground/50 transition-transform shrink-0 ${open ? "" : "-rotate-90"}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -95,13 +98,13 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
             </svg>
           )}
         </button>
-      ) : null}
+      ) : <span className="section-head hidden" />}
 
       {(!section.collapsible || open) && (
-        <div className="p-4 sm:p-5">
+        <div className="section-body p-4 sm:p-5">
           <div className={`grid ${gridClass} ${colCount > 1 ? "md:divide-x md:divide-border/50" : "gap-5"}`}>
             {regularCols.map((col, ci) => (
-              <div key={ci} className={colCount > 1 ? `space-y-5 ${ci > 0 ? "md:pl-6 pt-5 md:pt-0" : "md:pr-6"}` : "space-y-5"}>
+              <div key={ci} {...(section.columns[ci]?.fieldname ? { "data-fieldname": section.columns[ci]!.fieldname } : {})} className={`form-column ${colCount > 1 ? `space-y-5 ${ci > 0 ? "md:pl-6 pt-5 md:pt-0" : "md:pr-6"}` : "space-y-5"}`}>
                 {col.label && (
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border/40 pb-1.5">
                     {col.label}
@@ -119,6 +122,7 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
                     {...(onLinkSearch !== undefined ? { onLinkSearch } : {})}
                     hasError={missingFields?.has(field.fieldname) ?? false}
                     currency={currency}
+                    {...(extras ? { extras } : {})}
                   />
                 ))}
               </div>
@@ -137,6 +141,7 @@ export function SectionBlock({ section, values, isEditing, onChange, fieldBehavi
                   {...(childMetas !== undefined ? { childMetas } : {})}
                   {...(onLinkSearch !== undefined ? { onLinkSearch } : {})}
                   currency={currency}
+                  {...(extras ? { extras } : {})}
                 />
               ))}
             </div>

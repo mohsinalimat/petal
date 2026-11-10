@@ -4,3 +4,4 @@ packages:
   - "tooling/*"
   - "billing-fe"
   - "edusuite-fe"
+  - "petal-erpnext"

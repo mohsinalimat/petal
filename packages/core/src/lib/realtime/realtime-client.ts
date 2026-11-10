@@ -81,6 +81,16 @@ export class RealtimeClient {
     }
   }
 
+  /**
+   * Listen to any event Frappe publishes to this user's room (e.g. `setup_task`
+   * from `frappe.publish_realtime(..., user=...)`). Returns an unsubscribe fn.
+   */
+  on<T = unknown>(event: string, cb: (payload: T) => void): () => void {
+    const handler = (p: unknown) => cb(p as T)
+    this.socket.on(event, handler)
+    return () => { this.socket.off(event, handler) }
+  }
+
   close(): void {
     this.listHandlers.clear()
     this.docHandlers.clear()

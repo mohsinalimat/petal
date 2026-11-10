@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { EXACT_MAP, extractCsrfToken, rewritePrintHtml, stripCookieDomain, translatePath } from "./proxy-paths"
+import { EXACT_MAP, extractBootJson, extractCsrfToken, rewritePrintHtml, stripCookieDomain, translatePath } from "./proxy-paths"
 
 describe("translatePath", () => {
   it("maps neutral paths, resources and pass-throughs", () => {
@@ -41,5 +41,23 @@ describe("rewritePrintHtml / stripCookieDomain", () => {
 
   it("removes only the Domain attribute", () => {
     expect(stripCookieDomain("sid=1; Domain=erp.example.com; Path=/; HttpOnly")).toBe("sid=1; Path=/; HttpOnly")
+  })
+})
+
+
+describe("extractBootJson", () => {
+  it("reads frappe.boot from the desk page, even with braces and quotes inside strings", () => {
+    const boot = { user: { name: "Administrator", roles: ["System Manager"] }, sysdefaults: { currency: "INR" }, note: 'a } tricky "{" value \\ end', versions: { frappe: "15.103.2" } }
+    const html = `<script>
+      if (!window.frappe) window.frappe = {};
+      frappe.boot = ${JSON.stringify(boot)};
+      frappe._messages = frappe.boot["__messages"];
+      frappe.csrf_token = "abc";
+    </script>`
+    expect(JSON.parse(extractBootJson(html)!)).toEqual(boot)
+  })
+
+  it("returns null when there is no boot (login page)", () => {
+    expect(extractBootJson("<html><body>Login</body></html>")).toBeNull()
   })
 })

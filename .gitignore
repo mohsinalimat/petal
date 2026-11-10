@@ -42,3 +42,4 @@ logs/
 CLAUDE.md
 CLAUDE.community.md
 coverage/
+.next-prod/

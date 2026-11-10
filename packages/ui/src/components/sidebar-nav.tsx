@@ -116,7 +116,7 @@ function SidebarLink({ item, activeHref, renderLink, resolveIcon, onClose, depth
     <li>
       <div
         className={cn(
-          "flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium transition-all",
+          "flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium transition-colors",
           isActive
             ? "border-l-4 border-primary bg-primary/10 text-primary"
             : "text-foreground/70 hover:bg-accent hover:text-foreground",

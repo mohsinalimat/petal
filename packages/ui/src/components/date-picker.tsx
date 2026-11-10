@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { cn } from "../lib/utils"
+import { AnchoredPopover } from "./anchored-popover"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -41,6 +42,9 @@ export function DatePicker({
   const [month, setMonth] = useState(parsed?.getMonth() ?? today.getMonth())
   const [year, setYear]   = useState(parsed?.getFullYear() ?? today.getFullYear())
   const wrapRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  // The calendar is portalled to <body>, so it isn't inside wrapRef
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // Sync calendar view when value changes externally
   useEffect(() => {
@@ -53,7 +57,8 @@ export function DatePicker({
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (!wrapRef.current?.contains(t) && !panelRef.current?.contains(t)) {
         setOpen(false)
       }
     }
@@ -105,6 +110,7 @@ export function DatePicker({
   return (
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
       <button
+        ref={buttonRef}
         type="button"
         id={id}
         disabled={disabled}
@@ -129,10 +135,12 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div
+        <AnchoredPopover
+          anchorRef={buttonRef}
+          panelRef={panelRef}
           role="dialog"
           aria-label="Date picker"
-          className="absolute left-0 top-full z-[600] mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
+          className="w-72 overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
         >
           {/* Month navigation */}
           <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-3">
@@ -213,7 +221,7 @@ export function DatePicker({
               </button>
             )}
           </div>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   )

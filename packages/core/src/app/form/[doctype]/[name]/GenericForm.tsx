@@ -16,6 +16,9 @@ import { WorkflowActions } from "./components/WorkflowActions"
 import { DocActivity } from "./components/DocActivity"
 import { useRealtimeDoc } from "@/hooks/useRealtime"
 import { buildAmendment, computeDefaults, missingRequired, prefillKey, stripForCopy } from "@/lib/doc/doc-utils"
+import { useCompatForm } from "./useCompatForm"
+import type { LinkSearchContext } from "./components/types"
+import { CompatActions, CompatBanners, CompatIndicator } from "@/components/compat/FormChrome"
 
 export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctype: string; name: string; onIsSingle?: (v: boolean) => void; toolbarSlot?: React.ReactNode }) {
   const frappe        = useFrappe()
@@ -27,19 +30,20 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const returnField   = searchParams.get("returnField")
   const focusField    = searchParams.get("focusField")
   const focusValue    = searchParams.get("focusValue")
-  const isNew         = name === "new"
-  const startInEdit   = isNew || searchParams.get("edit") === "1"
+  const routeIsNew    = name === "new"
+  const startInEdit   = routeIsNew || searchParams.get("edit") === "1"
+  const hooksReady    = usePetalStore((s) => s.hooksReady)
 
-  const [meta, setMeta]                     = useState<DocTypeMeta | null>(null)
-  const [childMetas, setChildMetas]         = useState<Record<string, MetaField[]>>({})
-  const [values, setValues]                 = useState<Record<string, unknown>>({})
-  const [loading, setLoading]               = useState(true)
-  const [saving, setSaving]                 = useState(false)
+  const [metaState, setMeta]                = useState<DocTypeMeta | null>(null)
+  const [childMetasState, setChildMetas]    = useState<Record<string, MetaField[]>>({})
+  const [valuesState, setValues]            = useState<Record<string, unknown>>({})
+  const [loadingState, setLoading]          = useState(true)
+  const [savingState, setSaving]            = useState(false)
   const [deleting, setDeleting]             = useState(false)
   const [error, setError]                   = useState<string | null>(null)
-  const [isEditing, setIsEditing]           = useState(startInEdit)
+  const [isEditingState, setIsEditing]      = useState(startInEdit)
   const [activeTab, setActiveTab]           = useState(0)
-  const [isDirty, setIsDirty]               = useState(false)
+  const [isDirtyState, setIsDirty]          = useState(false)
   const [showPrint, setShowPrint]           = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pasteMsg, setPasteMsg]             = useState<string | null>(null)
@@ -52,6 +56,38 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const [activitySignal, setActivitySignal] = useState(0)
   /** Set when another user saves this doc while it has unsaved local edits. */
   const [remoteChange, setRemoteChange]     = useState<string | null>(null)
+
+  // ── Frappe-compatible runtime (doctype client scripts run unchanged) ──────
+  const compatConfig = hooks.frappe_compat?.enabled && !(hooks.frappe_compat.exclude ?? []).includes(doctype)
+    ? hooks.frappe_compat : null
+  const compatOn = !!compatConfig
+  // Values for a new doc: ?focusField/focusValue plus Quick Entry's "Edit Full
+  // Form" handoff. Worked out per route, and only once hooks say compat is on,
+  // so the sessionStorage handoff is consumed by whichever loader will use it.
+  const prefillRef = useRef<{ key: string; values: Record<string, unknown> } | null>(null)
+  const prefillRouteKey = `${doctype}\u0000${name}\u0000${focusField ?? ""}\u0000${focusValue ?? ""}`
+  if (compatOn && prefillRef.current?.key !== prefillRouteKey) {
+    const p: Record<string, unknown> = {}
+    if (focusField && focusValue) p[focusField] = focusValue
+    try {
+      const stored = routeIsNew && typeof window !== "undefined" ? sessionStorage.getItem(prefillKey(doctype)) : null
+      if (stored) { sessionStorage.removeItem(prefillKey(doctype)); Object.assign(p, JSON.parse(stored)) }
+    } catch {}
+    prefillRef.current = { key: prefillRouteKey, values: p }
+  }
+  const compat   = useCompatForm(compatConfig ? doctype : null, name, compatConfig, compatOn ? prefillRef.current?.values : null)
+  const cd       = compat.derived
+  // Scripts search the form's DOM (frm.wrapper, fields_dict.x.$wrapper…): give
+  // the runtime Petal's rendered form while it's mounted.
+  const compatRootRef = compat.attachRoot
+  const meta       = compatOn ? (cd?.meta ?? null) : metaState
+  const childMetas = compatOn ? (cd?.childMetas ?? {}) : childMetasState
+  const values     = compatOn ? (cd?.values ?? {}) : valuesState
+  const loading    = compatOn ? compat.loading || (!cd && !compat.error) : (loadingState || !hooksReady)
+  const saving     = compatOn ? (cd?.saving ?? false) || savingState : savingState
+  const isNew      = compatOn ? (cd?.isNew ?? routeIsNew) : routeIsNew
+  const isDirty    = compatOn ? (cd?.isDirty ?? false) : isDirtyState
+  const isEditing  = compatOn ? Number(values.docstatus ?? 0) === 0 && !cd?.readOnly : isEditingState
 
   function addToast(type: Toast["type"], message: string) {
     const id = ++toastIdRef.current
@@ -81,7 +117,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   async function searchLink(
     doctype: string,
     query: string,
+    ctx?: LinkSearchContext,
   ): Promise<{ value: string; description?: string }[]> {
+    if (compatOn) return compat.linkSearch(doctype, query, ctx)
     try {
       if (query.trim()) {
         const r = await frappe.callMethod<unknown>("frappe.desk.search.search_link", {
@@ -96,10 +134,11 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
 
   useEffect(() => {
+    if (!hooksReady || compatOn) return
     setLoading(true); setError(null); setActiveTab(0); setIsDirty(false); setIsEditing(startInEdit)
     Promise.all([
       frappe.callMethod<{ docs: DocTypeMeta[] }>("frappe.desk.form.load.getdoctype", { doctype }),
-      isNew ? Promise.resolve(null) : frappe.getDoc<FrappeDocument>(doctype, name),
+      routeIsNew ? Promise.resolve(null) : frappe.getDoc<FrappeDocument>(doctype, name),
     ])
       .then(([metaRes, docRes]) => {
         const allDocs = (metaRes as { docs: DocTypeMeta[] })?.docs ?? []
@@ -137,7 +176,23 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       })
       .catch(() => setError("Could not load this document."))
       .finally(() => setLoading(false))
-  }, [frappe, doctype, name, isNew])
+  }, [frappe, doctype, name, routeIsNew, hooksReady, compatOn])
+
+  useEffect(() => { if (compatOn) { setActiveTab(0) } }, [compatOn, doctype, name])
+
+  // After the first save (or a rename) the runtime holds the real name: move the URL to it.
+  useEffect(() => {
+    if (!compatOn || !cd || cd.isNew || !cd.docname || cd.docname === name) return
+    if (returnTo && returnField) {
+      router.replace(`${returnTo}?focusField=${returnField}&focusValue=${encodeURIComponent(cd.docname)}`)
+    } else {
+      router.replace(`/form/${encodeURIComponent(doctype)}/${encodeURIComponent(cd.docname)}`)
+    }
+  }, [compatOn, cd?.isNew, cd?.docname, name, doctype, returnTo, returnField, router])
+
+  useEffect(() => {
+    if (compatOn && compat.error) setError(compat.error)
+  }, [compatOn, compat.error])
 
   const layout = useMemo(() => (meta ? parseLayout(meta.fields) : []), [meta])
   const imageFieldname = useMemo(
@@ -159,11 +214,18 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   useEffect(() => { savingRef.current    = saving    }, [saving])
   useEffect(() => { docstatusRef.current = Number(values.docstatus ?? 0) }, [values.docstatus])
 
+  // The keydown listener is attached once; it reads the latest render's values
+  // through refs (handleSave closes over the current compat form and values).
+  const handleSaveRef = useRef<() => unknown>(() => {})
+  const isNewRef      = useRef(isNew)
+  handleSaveRef.current = () => handleSave()
+  isNewRef.current      = isNew
+
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey
 
-      if (e.key === "Escape" && isEditingRef.current && !isNew) {
+      if (e.key === "Escape" && isEditingRef.current && !isNewRef.current) {
         e.preventDefault()
         setIsEditing(false)
         setIsDirty(false)
@@ -175,7 +237,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       switch (e.key.toLowerCase()) {
         case "s":
           e.preventDefault()
-          if (isEditingRef.current && !savingRef.current) handleSave()
+          if (isEditingRef.current && !savingRef.current) void handleSaveRef.current()
           break
         case "e":
           e.preventDefault()
@@ -186,10 +248,14 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
 
     document.addEventListener("keydown", handler)
     return () => document.removeEventListener("keydown", handler)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNew])
+  }, [])
 
   function handleChange(fieldname: string, v: unknown) {
+    if (compatOn) {
+      const ft = meta?.fields.find((f) => f.fieldname === fieldname)?.fieldtype
+      compat.change(fieldname, v, ft)
+      return
+    }
     setValues((prev) => ({ ...prev, [fieldname]: v }))
     setIsDirty(true)
 
@@ -227,6 +293,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
 
   /** Re-fetch the saved document (after a remote change or workflow action). */
   async function reloadDoc() {
+    if (compatOn) { setRemoteChange(null); await compat.reload(); setActivitySignal((n) => n + 1); return }
     if (isNew) return
     frappe.invalidate(doctype)
     try {
@@ -257,6 +324,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   })
 
   async function handleSave() {
+    if (compatOn) { await compat.save(); setActivitySignal((n) => n + 1); return }
     if (meta) {
       const missing = missingRequired(meta.fields, values, fieldBehaviors)
 
@@ -298,6 +366,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
 
   async function handleSubmit() {
+    if (compatOn) { await compat.submit(); setActivitySignal((n) => n + 1); return }
     setSaving(true); setError(null)
     try {
       const submitted = await frappe.callMethod<Record<string, unknown>>("frappe.client.submit", { doc: { ...values, doctype, name } })
@@ -310,6 +379,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
 
   async function handleCancel() {
+    if (compatOn) { await compat.cancel(); setActivitySignal((n) => n + 1); return }
     setSaving(true); setError(null)
     try {
       await frappe.callMethod("frappe.client.cancel", { doctype, name })
@@ -322,6 +392,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
 
   async function handleDuplicate() {
+    if (compatOn) { await compat.duplicate(); return }
     setSaving(true); setError(null)
     try {
       const duped = stripForCopy(values, meta?.fields ?? [])
@@ -335,6 +406,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
 
   /** Open a new draft pre-filled from this cancelled doc, linked via amended_from. */
   function handleAmend() {
+    if (compatOn) { void compat.amend(); return }
     try {
       sessionStorage.setItem(prefillKey(doctype), JSON.stringify(buildAmendment(values, name, meta?.fields ?? [])))
     } catch {}
@@ -342,6 +414,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   }
 
   function handleWorkflowApplied(updated: Record<string, unknown>, action: string) {
+    if (compatOn) { void compat.reload(); addToast("success", `${action} applied`); return }
     setValues((p) => ({ ...p, ...updated }))
     setIsDirty(false); setIsEditing(false)
     frappe.invalidate(doctype)
@@ -362,6 +435,10 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       const merged: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(parsed)) {
         if (!STRIP.has(k)) merged[k] = v
+      }
+      if (compatOn) {
+        for (const [k, v] of Object.entries(merged)) handleChange(k, v)
+        return true
       }
       setValues((prev) => ({ ...prev, ...merged }))
       setIsDirty(true)
@@ -469,7 +546,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const skipFields = imageFieldname ? new Set([imageFieldname]) : undefined
 
   return (
-    <div className="space-y-0 pb-12">
+    <div ref={compatRootRef} className="form-layout space-y-0 pb-12" data-doctype={doctype}>
       {/* ── Form header ─────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 pb-5 border-b border-border mb-6">
         <div className="flex items-center gap-3 min-w-0">
@@ -519,7 +596,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
           <div className="min-w-0 space-y-1.5">
             <h1 className="text-xl font-bold text-foreground truncate leading-tight">{docTitle}</h1>
             <div className="flex items-center gap-2 flex-wrap">
-              {isSubmittable && <DocStatusBadge docstatus={docstatus} />}
+              {compatOn ? <CompatIndicator indicator={cd?.indicator ?? null} /> : isSubmittable && <DocStatusBadge docstatus={docstatus} />}
               {isDirty && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
                   <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -537,7 +614,38 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
             <span className="text-xs text-red-500 max-w-[220px] text-right leading-snug">{error}</span>
           )}
 
-          {isEditing ? (
+          {compatOn && cd ? (
+            <CompatActions
+              compat={compat}
+              derived={cd}
+              isSubmittable={isSubmittable}
+              hasWorkflow={!!workflowField}
+              onPrint={() => setShowPrint(true)}
+              more={(
+                <>
+                  {workflowField && !isNew && (
+                    <WorkflowActions
+                      doc={{ ...values, doctype, name: cd.docname }}
+                      stateField={workflowField}
+                      disabled={saving || isDirty}
+                      onApplied={handleWorkflowApplied}
+                      onError={(m) => addToast("error", m)}
+                    />
+                  )}
+                  {!isNew && (
+                    <MoreActionsDropdown
+                      onDuplicate={handleDuplicate}
+                      onCopyJSON={handleCopyJSON}
+                      onDelete={() => setShowDeleteConfirm(true)}
+                      canDelete={canDelete}
+                      disabled={saving}
+                    />
+                  )}
+                  {toolbarSlot}
+                </>
+              )}
+            />
+          ) : isEditing ? (
             <>
               {!isNew && (
                 <button
@@ -666,6 +774,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
         </div>
       )}
 
+      {compatOn && cd && <CompatBanners derived={cd} />}
+
       {/* ── Main form area ─────────────────────────── */}
       <div className="space-y-6">
           {/* Tabs */}
@@ -706,6 +816,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
                   missingFields={missingFields}
                   currency={currency}
                   {...(skipFields ? { skipFields } : {})}
+                  {...(compatOn ? { extras: compat.extras } : {})}
                 />
               ))}
             </div>

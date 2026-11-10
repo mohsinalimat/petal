@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { cn } from "../lib/utils"
+import { AnchoredPopover } from "./anchored-popover"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -50,6 +51,9 @@ export function DateTimePicker({
   const [hh, setHh]       = useState(rawTime.slice(0, 2) || "00")
   const [mm, setMm]       = useState(rawTime.slice(3, 5) || "00")
   const wrapRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  // The calendar is portalled to <body>, so it isn't inside wrapRef
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const p = (value || "").split(" ")
@@ -66,7 +70,8 @@ export function DateTimePicker({
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (!wrapRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
     }
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false)
@@ -147,6 +152,7 @@ export function DateTimePicker({
   return (
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
       <button
+        ref={buttonRef}
         type="button"
         id={id}
         disabled={disabled}
@@ -172,10 +178,12 @@ export function DateTimePicker({
       </button>
 
       {open && (
-        <div
+        <AnchoredPopover
+          anchorRef={buttonRef}
+          panelRef={panelRef}
           role="dialog"
           aria-label="Date and time picker"
-          className="absolute left-0 top-full z-[600] mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
+          className="w-72 overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
         >
           {/* Month navigation */}
           <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-3">
@@ -282,7 +290,7 @@ export function DateTimePicker({
               </button>
             </div>
           </div>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   )

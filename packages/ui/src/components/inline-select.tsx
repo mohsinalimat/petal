@@ -25,7 +25,7 @@ export function InlineSelect<T extends string>({
         <button
           className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium
                      bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground
-                     border border-transparent hover:border-border transition-all"
+                     border border-transparent hover:border-border transition-colors"
         >
           {icon && <span className="opacity-60">{icon}</span>}
           {value ?? options[0]}

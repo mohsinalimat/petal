@@ -42,6 +42,13 @@ export const EXACT_MAP: Record<string, string> = {
  */
 export const CSRF_PATH = "auth/csrf"
 
+/**
+ * Neutral path for Desk's boot data (session, user, defaults, app versions).
+ * `frappe.sessions.get` isn't whitelisted, so like Desk the proxy reads it from
+ * the `/app` page (see extractBootJson). Used by the Frappe-compatible runtime.
+ */
+export const BOOT_PATH = "auth/boot"
+
 export function translatePath(neutralPath: string, pathMap: Record<string, string>): string {
   const mapped = pathMap[neutralPath]
   if (mapped) return mapped
@@ -73,4 +80,30 @@ export function rewritePrintHtml(html: string): string {
 /** Remove the Domain attribute so cookies scoped to the Frappe host stick to the proxy origin. */
 export function stripCookieDomain(cookie: string): string {
   return cookie.replace(/;\s*domain=[^;]*/gi, "")
+}
+
+
+/**
+ * The `frappe.boot = {...};` object Frappe renders into the desk page
+ * (www/app.html), as a JSON string. Walks the object so braces inside strings
+ * don't end it early. Returns null for guests (no boot on the login page).
+ */
+export function extractBootJson(html: string): string | null {
+  const m = /frappe\.boot\s*=\s*\{/.exec(html)
+  if (!m) return null
+  const start = m.index + m[0].length - 1
+  let depth = 0
+  let inString = false
+  for (let i = start; i < html.length; i++) {
+    const c = html[i]
+    if (inString) {
+      if (c === "\\") i++
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === "{") depth++
+    else if (c === "}" && --depth === 0) return html.slice(start, i + 1)
+  }
+  return null
 }
