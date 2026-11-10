@@ -4,7 +4,11 @@ const fs = require("fs")
 const path = require("path")
 
 const { withPetal } = require("./src/plugin")
-const petalConfig = require("./petal.config").default
+// petal.config.ts is per-install (gitignored); a fresh clone, CI or Docker build
+// has none, so fall back to no apps (PETAL_APPS / petal.apps.json still apply).
+const petalConfig = fs.existsSync(path.join(__dirname, "petal.config.ts"))
+  ? require("./petal.config").default
+  : { apps: [] }
 
 // Origins that are allowed to serve remote app bundles (petal.hooks.js) and their
 // CSS. Computed once at server start from petal.config.ts + petal.apps.json (if

@@ -37,6 +37,7 @@ describe("rewritePrintHtml / stripCookieDomain", () => {
     expect(out).toContain('src="/api/v1/files/x.png"')
     expect(out).toContain("url(/api/v1/assets/i.png)")
     expect(out).toContain(".print-toolbar")
+    expect(out).toContain(".action-banner")
   })
 
   it("removes only the Domain attribute", () => {

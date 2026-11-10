@@ -47,6 +47,8 @@ export type DocTypeMeta = {
   doctype?: string
   module?: string
   title_field?: string
+  /** Desk's default print format for this DocType (Property Setters applied) */
+  default_print_format?: string
   image_field?: string
   sort_field?: string
   sort_order?: string

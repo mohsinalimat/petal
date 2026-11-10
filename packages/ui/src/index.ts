@@ -192,8 +192,8 @@ export type { GanttViewProps } from "./components/gantt-view"
 export { buildBars, buildTicks, daysBetween, addDays, shiftDates } from "./lib/gantt"
 export type { GanttBar, GanttRange } from "./lib/gantt"
 
-export { DocTimeline } from "./components/doc-timeline"
-export type { DocTimelineProps } from "./components/doc-timeline"
+export { DocTimeline, DocSidebar } from "./components/doc-timeline"
+export type { DocTimelineProps, DocSidebarProps } from "./components/doc-timeline"
 export { buildTimeline, parseVersion, htmlToText, textToCommentHtml, relativeTime } from "./lib/timeline"
 export type { DocInfo, TimelineItem, FieldChange, DocInfoAttachment, DocInfoAssignment } from "./lib/timeline"
 

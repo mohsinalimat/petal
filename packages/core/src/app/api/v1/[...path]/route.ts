@@ -190,6 +190,16 @@ async function proxy(
     if (!isReadOnly) fetchInit.body = bodyText
 
     const frappeRes = await fetch(target, fetchInit)
+    // Frappe answers get_logged_user with 403 for guests. "Not logged in" is an
+    // expected state for this session probe (login page, expired session), so
+    // report it as the Guest user instead of a failed request in the console.
+    if (neutralPath === "auth/me" && frappeRes.status === 403) {
+      const upstream = await buildResponse(frappeRes)
+      const res = NextResponse.json({ message: "Guest" }, { headers: { "Cache-Control": "no-store" } })
+      // keep any cookie Frappe set (e.g. clearing an expired sid)
+      upstream.headers.getSetCookie().forEach((c) => res.headers.append("Set-Cookie", c))
+      return res
+    }
     return buildResponse(frappeRes)
 
   } catch (err) {

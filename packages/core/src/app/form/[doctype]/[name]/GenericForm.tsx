@@ -13,7 +13,7 @@ import { ToastList, playChime } from "./components/Toast"
 import type { Toast } from "./components/Toast"
 import type { DocTypeMeta, MetaField } from "./components/types"
 import { WorkflowActions } from "./components/WorkflowActions"
-import { DocActivity } from "./components/DocActivity"
+import { DocActivityFeed, DocActivitySidebar, useDocActivity } from "./components/DocActivity"
 import { useRealtimeDoc } from "@/hooks/useRealtime"
 import { buildAmendment, computeDefaults, missingRequired, prefillKey, stripForCopy } from "@/lib/doc/doc-utils"
 import { useCompatForm } from "./useCompatForm"
@@ -88,6 +88,9 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const isNew      = compatOn ? (cd?.isNew ?? routeIsNew) : routeIsNew
   const isDirty    = compatOn ? (cd?.isDirty ?? false) : isDirtyState
   const isEditing  = compatOn ? Number(values.docstatus ?? 0) === 0 && !cd?.readOnly : isEditingState
+  // Saved, non-single docs get the right sidebar (assignments, attachments, info) + activity feed
+  const showActivity = !isNew && !!meta && meta.issingle !== 1
+  const activity = useDocActivity({ doctype, name, doc: values, enabled: showActivity, reloadSignal: activitySignal })
 
   function addToast(type: Toast["type"], message: string) {
     const id = ++toastIdRef.current
@@ -776,6 +779,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
 
       {compatOn && cd && <CompatBanners derived={cd} />}
 
+      <div className={showActivity ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-8" : undefined}>
+      <div className="min-w-0">
       {/* ── Main form area ─────────────────────────── */}
       <div className="space-y-6">
           {/* Tabs */}
@@ -822,8 +827,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
             </div>
           )}
 
-          {/* Metadata footer */}
-          {!isNew && (
+          {/* Metadata footer (saved docs with a sidebar show this there instead) */}
+          {!isNew && !showActivity && (
             <div className="mt-6 border border-border/60 bg-muted/20 overflow-hidden">
               <div className="px-3 sm:px-5 py-2.5 border-b border-border/40">
                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Document Info</span>
@@ -845,15 +850,34 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
           )}
         </div>
 
-      {!isNew && meta && meta.issingle !== 1 && (
-        <DocActivity
-          doctype={doctype}
-          name={name}
-          doc={values}
-          fields={meta.fields}
-          reloadSignal={activitySignal}
-        />
+      {showActivity && meta && <DocActivityFeed activity={activity} fields={meta.fields} />}
+      </div>
+
+      {showActivity && (
+        <DocActivitySidebar
+          activity={activity}
+          className="lg:sticky lg:top-4 lg:self-start rounded-lg border border-border/60 bg-muted/10 p-4"
+        >
+          <section aria-label="Document info" className="space-y-2 border-t border-border/60 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Document info</h3>
+            <dl className="space-y-2 text-xs">
+              {[
+                { label: "Created",     by: values.owner,       at: values.creation },
+                { label: "Modified",    by: (values as Record<string, unknown>).modified_by, at: values.modified },
+              ].map((m) => (
+                <div key={m.label}>
+                  <dt className="text-muted-foreground/70">{m.label}</dt>
+                  <dd className="text-foreground/80">
+                    <FieldValue value={m.at} fieldtype="Datetime" />
+                    <span className="block truncate text-muted-foreground">by {String(m.by ?? "—")}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </DocActivitySidebar>
       )}
+      </div>
 
       {/* ── Delete confirm ──────────────────────────── */}
       <DeleteConfirmDialog
@@ -870,6 +894,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
         <PrintModal
           doctype={doctype}
           name={name}
+          {...(meta?.default_print_format ? { defaultFormat: meta.default_print_format } : {})}
           onClose={() => setShowPrint(false)}
         />
       )}

@@ -20,6 +20,21 @@ export type DocTimelineProps = {
   onRemoveAttachment?: (id: string) => Promise<void>
   onAssign?: (user: string) => Promise<void>
   onUnassign?: (user: string) => Promise<void>
+  /** Render Assigned to / Attachments beside the activity (default). Pass false
+   *  when the host renders <DocSidebar> elsewhere, e.g. next to the form. */
+  showSidebar?: boolean
+  className?: string
+}
+
+export type DocSidebarProps = {
+  attachments?: DocInfoAttachment[]
+  assignments?: DocInfoAssignment[]
+  onUpload?: (file: File) => Promise<void>
+  onRemoveAttachment?: (id: string) => Promise<void>
+  onAssign?: (user: string) => Promise<void>
+  onUnassign?: (user: string) => Promise<void>
+  /** Extra sections appended below Attachments (e.g. document info). */
+  children?: React.ReactNode
   className?: string
 }
 
@@ -40,14 +55,12 @@ function Avatar({ user }: { user: string }) {
 
 export function DocTimeline({
   items, attachments = [], assignments = [], loading, currentUser, fieldLabel = (f) => f,
-  onAddComment, onDeleteComment, onUpload, onRemoveAttachment, onAssign, onUnassign, className,
+  onAddComment, onDeleteComment, onUpload, onRemoveAttachment, onAssign, onUnassign, showSidebar = true, className,
 }: DocTimelineProps) {
   const [draft, setDraft] = useState("")
   const [posting, setPosting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [assignee, setAssignee] = useState("")
   const [busy, setBusy] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   async function run(fn: () => Promise<void>) {
     setBusy(true); setError(null)
@@ -70,7 +83,7 @@ export function DocTimeline({
   }
 
   return (
-    <div className={cn("grid gap-6 lg:grid-cols-[1fr_260px]", className)}>
+    <div className={cn(showSidebar && "grid gap-6 lg:grid-cols-[1fr_260px]", className)}>
       <section aria-label="Activity" className="space-y-4 min-w-0">
         <h2 className="text-sm font-semibold text-foreground">Activity</h2>
         <form onSubmit={submitComment} className="flex gap-2 items-start">
@@ -144,7 +157,36 @@ export function DocTimeline({
         </ol>
       </section>
 
-      <aside className="space-y-6">
+      {showSidebar && (
+        <DocSidebar
+          attachments={attachments}
+          assignments={assignments}
+          {...(onUpload ? { onUpload } : {})}
+          {...(onRemoveAttachment ? { onRemoveAttachment } : {})}
+          {...(onAssign ? { onAssign } : {})}
+          {...(onUnassign ? { onUnassign } : {})}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Assignments and attachments for a document — beside the timeline or the form. */
+export function DocSidebar({
+  attachments = [], assignments = [], onUpload, onRemoveAttachment, onAssign, onUnassign, children, className,
+}: DocSidebarProps) {
+  const [assignee, setAssignee] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true); setError(null)
+    try { await fn() } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong") } finally { setBusy(false) }
+  }
+
+  return (
+      <aside className={cn("space-y-6", className)}>
         <section aria-label="Assigned to" className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</h3>
           {assignments.length === 0 && <p className="text-xs text-muted-foreground/70">Nobody</p>}
@@ -210,7 +252,8 @@ export function DocTimeline({
             </>
           )}
         </section>
+        {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+        {children}
       </aside>
-    </div>
   )
 }
