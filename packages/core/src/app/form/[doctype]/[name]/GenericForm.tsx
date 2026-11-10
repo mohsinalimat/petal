@@ -17,8 +17,15 @@ import { DocActivityFeed, DocActivitySidebar, useDocActivity } from "./component
 import { useRealtimeDoc } from "@/hooks/useRealtime"
 import { buildAmendment, computeDefaults, missingRequired, prefillKey, stripForCopy } from "@/lib/doc/doc-utils"
 import { useCompatForm } from "./useCompatForm"
+import { safeInternalPath } from "@/lib/nav/safe-path"
 import type { LinkSearchContext } from "./components/types"
 import { CompatActions, CompatBanners, CompatIndicator } from "@/components/compat/FormChrome"
+
+/** Back to the form that opened this quick-create, telling it which field to fill with the new name. */
+function returnUrl(returnTo: string, field: string, value: string): string {
+  const sep = returnTo.includes("?") ? "&" : "?"
+  return `${returnTo}${sep}focusField=${encodeURIComponent(field)}&focusValue=${encodeURIComponent(value)}`
+}
 
 export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctype: string; name: string; onIsSingle?: (v: boolean) => void; toolbarSlot?: React.ReactNode }) {
   const frappe        = useFrappe()
@@ -26,7 +33,8 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   const currency      = (settings.currency as string | undefined) ?? "USD"
   const router        = useRouter()
   const searchParams  = useSearchParams()
-  const returnTo      = searchParams.get("returnTo")
+  // Attacker-controllable (it's in the URL): only same-origin paths are honoured.
+  const returnTo      = safeInternalPath(searchParams.get("returnTo"))
   const returnField   = searchParams.get("returnField")
   const focusField    = searchParams.get("focusField")
   const focusValue    = searchParams.get("focusValue")
@@ -187,7 +195,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
   useEffect(() => {
     if (!compatOn || !cd || cd.isNew || !cd.docname || cd.docname === name) return
     if (returnTo && returnField) {
-      router.replace(`${returnTo}?focusField=${returnField}&focusValue=${encodeURIComponent(cd.docname)}`)
+      router.replace(returnUrl(returnTo, returnField, cd.docname))
     } else {
       router.replace(`/form/${encodeURIComponent(doctype)}/${encodeURIComponent(cd.docname)}`)
     }
@@ -356,7 +364,7 @@ export function GenericForm({ doctype, name, onIsSingle, toolbarSlot }: { doctyp
       addToast("success", isNew ? `${doctype} created` : "Document saved")
       if (isNew && saved.name) {
         if (returnTo && returnField) {
-          router.replace(`${returnTo}?focusField=${returnField}&focusValue=${encodeURIComponent(saved.name)}`)
+          router.replace(returnUrl(returnTo, returnField, saved.name))
         } else {
           router.replace(`/form/${encodeURIComponent(doctype)}/${encodeURIComponent(saved.name)}`)
         }

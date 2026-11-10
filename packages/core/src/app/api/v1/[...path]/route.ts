@@ -15,9 +15,21 @@ function getBackend(req: NextRequest): { frappeUrl: string; frappeSiteHost: stri
 const DROP_REQUEST_HEADERS = new Set([
   "host", "content-length", "connection", "transfer-encoding",
 ])
+// fetch() transparently decodes gzip/br/deflate bodies but keeps the upstream
+// Content-Encoding and Content-Length headers. Forwarding them would make the
+// browser try to decode an already-decoded body (ERR_CONTENT_DECODING_FAILED)
+// whenever the backend — e.g. nginx in a bench production setup — compresses.
 const DROP_RESPONSE_HEADERS = new Set([
-  "connection", "transfer-encoding", "keep-alive",
+  "connection", "transfer-encoding", "keep-alive", "content-encoding", "content-length",
 ])
+
+/** Whitelisted Python method path, e.g. "frappe.client.get_list". Anything else could escape /api/method/. */
+const METHOD_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/
+
+/** Client-facing 502: details stay in server logs, never in the response (they reveal internal hosts). */
+function badGateway(): NextResponse {
+  return NextResponse.json({ error: "The backend could not be reached" }, { status: 502 })
+}
 
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 
@@ -53,6 +65,13 @@ async function buildResponse(frappeRes: Response): Promise<NextResponse> {
   return new NextResponse(resBody, { status: frappeRes.status, headers: resHeaders })
 }
 
+/** Network errors from fetch() keep the useful part (ECONNREFUSED host:port) in `cause`. */
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err)
+  const cause = (err as Error & { cause?: unknown }).cause
+  return cause ? `${err.message}: ${String(cause)}` : err.message
+}
+
 function getEffectivePathMap(req: NextRequest): Record<string, string> {
   const overrides = getRuntimeConfig().pathMap ?? {}
   return { ...EXACT_MAP, ...overrides, ...(getBackend(req)?.pathMap ?? {}) }
@@ -83,7 +102,9 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   }
 
   const isReadOnly = req.method === "GET" || req.method === "HEAD"
-  const bodyText: string | null = isReadOnly ? null : await req.text()
+  // Raw bytes, never req.text(): multipart uploads carry binary data that a
+  // UTF-8 decode/re-encode round trip silently corrupts.
+  const body: ArrayBuffer | null = isReadOnly ? null : await req.arrayBuffer()
 
   // /printview — proxy Frappe's full print page, rewriting asset paths so
   // they resolve through this same proxy instead of the hidden Frappe origin.
@@ -102,7 +123,7 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
       })
     } catch (err) {
       console.error("[Petal Proxy] printview failed →", String(err))
-      return NextResponse.json({ error: "Request failed" }, { status: 502 })
+      return badGateway()
     }
   }
 
@@ -111,8 +132,9 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
     try {
       const frappeRes = await fetch(target, { headers: reqHeaders, redirect: "manual", cache: "no-store" })
       return buildResponse(frappeRes)
-    } catch {
-      return new NextResponse(null, { status: 502 })
+    } catch (err) {
+      console.error("[Petal Proxy] asset fetch failed →", { target, cause: describeError(err) })
+      return badGateway()
     }
   }
 
@@ -131,7 +153,7 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
         : NextResponse.json({ error: "No CSRF token — session is not logged in" }, { status: 401 })
     } catch (err) {
       console.error("[Petal Proxy] csrf fetch failed →", String(err))
-      return NextResponse.json({ error: "Request failed" }, { status: 502 })
+      return badGateway()
     }
   }
 
@@ -152,7 +174,7 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
       })
     } catch (err) {
       console.error("[Petal Proxy] boot fetch failed →", String(err))
-      return NextResponse.json({ error: "Request failed" }, { status: 502 })
+      return badGateway()
     }
   }
 
@@ -160,6 +182,7 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   if (neutralPath === "exec") {
     const method = req.headers.get("x-method")
     if (!method) return NextResponse.json({ error: "Missing X-Method header" }, { status: 400 })
+    if (!METHOD_NAME.test(method)) return NextResponse.json({ error: "Invalid method name" }, { status: 400 })
     delete reqHeaders["x-method"]
     const target = `${frappeUrl}/api/method/${method}${search}`
     try {
@@ -168,12 +191,12 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
         headers: reqHeaders,
         redirect: "manual",
         cache: "no-store",
-        body: bodyText ?? null,
+        body,
       })
       return buildResponse(frappeRes)
     } catch (err) {
-      console.error("[Petal Proxy] exec failed →", { method, cause: String(err) })
-      return NextResponse.json({ error: "Request failed" }, { status: 502 })
+      console.error("[Petal Proxy] exec failed →", { method, cause: describeError(err) })
+      return badGateway()
     }
   }
 
@@ -187,7 +210,7 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
       redirect: "manual",
       cache: "no-store",
     }
-    if (!isReadOnly) fetchInit.body = bodyText
+    if (body) fetchInit.body = body
 
     const frappeRes = await fetch(target, fetchInit)
     // Frappe answers get_logged_user with 403 for guests. "Not logged in" is an
@@ -203,14 +226,8 @@ async function proxy(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
     return buildResponse(frappeRes)
 
   } catch (err) {
-    const cause = err instanceof Error
-      ? ((err as Error & { cause?: unknown }).cause ?? err.message)
-      : String(err)
-    console.error("[Petal Proxy] fetch failed →", { target, host: frappeSiteHost, cause })
-    return NextResponse.json(
-      { error: "Request failed", cause: String(cause) },
-      { status: 502 },
-    )
+    console.error("[Petal Proxy] fetch failed →", { target, host: frappeSiteHost, cause: describeError(err) })
+    return badGateway()
   }
 }
 
