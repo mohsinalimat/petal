@@ -87,3 +87,45 @@ describe("DocList export / bulk actions", () => {
     await waitFor(() => expect(onFetchData).toHaveBeenCalledTimes(2))
   })
 })
+
+describe("DocList extension points (Frappe list view settings)", () => {
+  it("fetches extra fields, applies default filters and shows the app's status indicator", async () => {
+    const { onFetchData } = setup({
+      extraFields: ["priority"],
+      initialFilters: [["status", "=", "Open"]],
+      rowIndicator: (r) => ({ label: r.status === "Open" ? "Needs Work" : "Done", color: r.status === "Open" ? "orange" : "green" }),
+    })
+    await screen.findAllByText("Needs Work")
+    expect(screen.getAllByText("Done").length).toBeGreaterThan(0)
+    const p = onFetchData.mock.calls[0]![0]
+    expect(p.fields).toContain("priority")
+    expect(p.filters).toContainEqual(["Task", "status", "=", "Open"])
+  })
+
+  it("custom cells, selection actions, menu actions and toolbar content", async () => {
+    const onAction = vi.fn()
+    const onMenu = vi.fn()
+    const onSelection = vi.fn()
+    setup({
+      renderCell: (f, v) => (f === "status" ? <b>{`[${String(v)}]`}</b> : undefined),
+      selectionActions: [{ label: "Make Payment", onClick: onAction }],
+      menuActions: [{ label: "Recalculate", onClick: onMenu }],
+      toolbarEnd: <button type="button">Script Button</button>,
+      onSelectionChange: onSelection,
+    })
+    await screen.findAllByText("[Open]")
+    expect(screen.getByRole("button", { name: "Script Button" })).toBeTruthy()
+
+    openMenu()
+    fireEvent.click(screen.getByText("Recalculate"))
+    expect(onMenu).toHaveBeenCalled()
+
+    // Select the first row, then run the script's action on it.
+    const firstRowBox = screen.getAllByRole("checkbox")[1]!
+    fireEvent.click(firstRowBox.closest("td") ?? firstRowBox)
+    await waitFor(() => expect(onSelection).toHaveBeenLastCalledWith(["T-1"]))
+    openMenu()
+    fireEvent.click(screen.getByText("Make Payment"))
+    expect(onAction).toHaveBeenCalledWith(["T-1"])
+  })
+})

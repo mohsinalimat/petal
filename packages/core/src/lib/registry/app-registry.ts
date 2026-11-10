@@ -138,6 +138,23 @@ export class AppRegistry {
       sidebar_item_overrides: itemOverrides,
       sidebar_order: mergedOrder,
       navbar_items: all.flatMap((h) => h.navbar_items ?? []),
+      setup_wizard_slides: all.flatMap((h) => h.setup_wizard_slides ?? []),
+      ...(all.some((h) => h.frappe_compat?.enabled)
+        ? {
+            frappe_compat: {
+              enabled: true,
+              bundles: [...new Set(all.flatMap((h) => h.frappe_compat?.bundles ?? []))],
+              autoBundles: all.every((h) => h.frappe_compat?.autoBundles !== false),
+              exclude: [...new Set(all.flatMap((h) => h.frappe_compat?.exclude ?? []))],
+              desk_controls: [...new Set(all.flatMap((h) => h.frappe_compat?.desk_controls ?? []))],
+              desk: {
+                doctypes: [...new Set(all.flatMap((h) => h.frappe_compat?.desk?.doctypes ?? []))],
+                pages: [...new Set(all.flatMap((h) => h.frappe_compat?.desk?.pages ?? []))],
+                embed: all.some((h) => h.frappe_compat?.desk?.embed),
+              },
+            },
+          }
+        : {}),
       routes: all.flatMap((h) => h.routes ?? []),
       form_overrides: Object.assign({}, ...all.map((h) => h.form_overrides ?? {})),
       form_field_behaviors: Object.assign({}, ...all.map((h) => h.form_field_behaviors ?? {})),

@@ -16,6 +16,10 @@ function runtimeOrigins(req: NextRequest): string | null {
   return appOrigins(apps).join(" ")
 }
 
+function deskOrigin(): string | null {
+  try { return process.env.NEXT_PUBLIC_PETAL_DESK_URL ? new URL(process.env.NEXT_PUBLIC_PETAL_DESK_URL).origin : null } catch { return null }
+}
+
 function randomNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   let binary = ""
@@ -49,11 +53,15 @@ export function middleware(req: NextRequest) {
     // Inline `style="…"` attributes are pervasive (Tailwind + CSS custom
     // properties for theming); auditing them all to nonce/hash is out of scope.
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Image fields (Item.image, User.user_image, …) may hold any external URL,
+    // as Desk allows — images can't execute, so any https/http source is fine.
+    "img-src 'self' data: blob: https: http:",
     "font-src 'self' data:",
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
+    // Desk embeds (frappe_compat.desk.embed) may frame only Desk's own origin.
+    `frame-src ${["'self'", deskOrigin()].filter(Boolean).join(" ")}`,
     "frame-ancestors 'none'",
     "form-action 'self'",
   ].join("; ")

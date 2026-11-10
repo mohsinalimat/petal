@@ -53,7 +53,7 @@ export {
 export { cn } from "./lib/utils"
 
 export { DocList } from "./components/doc-list"
-export type { DocListProps, DocListMeta, DocListFetchParams, DocListFilter, ListMetaField } from "./components/doc-list"
+export type { DocListProps, DocListMeta, DocListFetchParams, DocListFilter, ListMetaField, DocListIndicator, DocListAction } from "./components/doc-list"
 
 // ---------------------------------------------------------------------------
 // Frappe field inputs
@@ -93,7 +93,7 @@ export { FieldInput } from "./components/field-input"
 export type { FieldInputProps } from "./components/field-input"
 
 export { ChildTable } from "./components/child-table"
-export type { ChildTableProps, ChildTableMeta } from "./components/child-table"
+export type { ChildTableProps, ChildTableMeta, LinkSearchContext, LinkSearchFn } from "./components/child-table"
 
 export { DeleteConfirmDialog } from "./components/delete-confirm-dialog"
 export type { DeleteConfirmDialogProps } from "./components/delete-confirm-dialog"

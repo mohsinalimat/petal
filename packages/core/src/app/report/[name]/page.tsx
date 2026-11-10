@@ -4,6 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "next/navigation"
 import { useFrappe } from "@/hooks/useFrappe"
 import { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell } from "@petal/ui"
+import { usePetalStore } from "@/store/petal-store"
+import dynamic from "next/dynamic"
+
+// The Frappe runtime (jQuery, moment, Desk controls) loads only for compat apps.
+const CompatReport = dynamic(() => import("@/components/compat/CompatReport").then((m) => m.CompatReport), {
+  ssr: false,
+  loading: () => <PageLoader label="Loading report…" />,
+})
+import { PageLoader } from "@/components/shell/PageLoader"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -381,7 +390,23 @@ function renderFilterInput(
 // Page
 // ---------------------------------------------------------------------------
 
+/**
+ * With the Frappe-compatible runtime on, reports run their real
+ * frappe.query_reports settings (filters, onload, formatter); otherwise the
+ * filter definitions are read from the script's source below.
+ */
 export default function ReportPage() {
+  const params = useParams()
+  const name = decodeURIComponent(params.name as string)
+  const hooks = usePetalStore((s) => s.hooks)
+  const hooksReady = usePetalStore((s) => s.hooksReady)
+  const config = hooks.frappe_compat?.enabled ? hooks.frappe_compat : null
+  if (!hooksReady) return <PageLoader label="Loading report…" />
+  if (config) return <CompatReport key={name} name={name} config={config} />
+  return <PlainReportPage />
+}
+
+function PlainReportPage() {
   const params = useParams()
   const name = decodeURIComponent(params.name as string)
   const frappe = useFrappe()

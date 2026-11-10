@@ -78,16 +78,43 @@ export type DocTypeMeta = {
   }>
 }
 
-export type LayoutColumn = { label: string; fields: MetaField[] }
+/** `fieldname` is the Column/Section Break's, when the layout came from one (Desk's data-fieldname). */
+export type LayoutColumn = { label: string; fields: MetaField[]; fieldname?: string }
 
 export type LayoutSection = {
   label: string
   collapsible: boolean
   columns: LayoutColumn[]
+  fieldname?: string
 }
 
 export type LayoutTab = {
   label: string
   fieldname: string
   sections: LayoutSection[]
+}
+
+/** Which field a link search is for (and which grid row, for child tables). */
+export type LinkSearchContext = { fieldname: string; table?: string; rowName?: string }
+
+export type LinkSearch = (
+  doctype: string,
+  query: string,
+  ctx?: LinkSearchContext,
+) => Promise<{ value: string; description?: string }[]>
+
+/** Hooks a form runtime (the Frappe-compatible one) can give the field renderers. */
+export type FormFieldExtras = {
+  /** Field types drawn with Desk's own control (compat runtime). */
+  usesDeskControl?: (fieldtype: string) => boolean
+  /** Desk's control element for a field, or null while Desk's controls load. */
+  deskControl?: (fieldname: string) => HTMLElement | null
+  /** Live DOM element for an HTML field; scripts write into it directly. */
+  htmlHost?: (fieldname: string) => HTMLElement | null
+  /** A Button field was clicked. */
+  onButton?: (fieldname: string) => void
+  /** Custom actions under a child table. */
+  tableButtons?: (fieldname: string) => Array<{ label: string; onClick: () => void }>
+  /** Child table hides "Add row". */
+  tableCannotAdd?: (fieldname: string) => boolean
 }

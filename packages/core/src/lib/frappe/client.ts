@@ -172,6 +172,40 @@ export class FrappeClient {
     }
   }
 
+  /**
+   * Call a whitelisted method and return Frappe's raw response — `message`,
+   * `docs`, `_server_messages`, `exc` — with the HTTP status, never throwing on
+   * an error status. Used by the Frappe-compatible form runtime, which needs
+   * the full Desk response shape. Not cached.
+   */
+  async rawCall(method: string, args: Record<string, unknown>): Promise<{ status: number; data: Record<string, unknown> | null }> {
+    if (this.gate) await this.gate
+    if (!this.csrfToken) await this.initCSRF()
+    const headers: Record<string, string> = { "Content-Type": "application/json", "X-Method": method, Accept: "application/json" }
+    const csrfToken = this.getCSRFToken()
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken
+    let requestOptions: RequestInit & { path: string } = {
+      path: "/exec", method: "POST", credentials: "include", headers, body: JSON.stringify(args),
+    }
+    if (this.config.beforeRequest) requestOptions = await this.config.beforeRequest(requestOptions)
+    const { path, ...fetchOptions } = requestOptions
+    const res = await fetch(`${this.baseUrl}${path}`, fetchOptions)
+    let data: Record<string, unknown> | null = null
+    try { data = (await res.json()) as Record<string, unknown> } catch { data = null }
+    if (data && res.ok && this.config.afterRequest) data = (await this.config.afterRequest(data)) as Record<string, unknown>
+    return { status: res.status, data }
+  }
+
+  /** Desk's boot data (frappe.boot) for the signed-in session; see BOOT_PATH. */
+  async getBoot(): Promise<Record<string, unknown>> {
+    if (this.gate) await this.gate
+    const res = await fetch(`${this.baseUrl}/auth/boot`, { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" })
+    if (!res.ok) throw new Error(res.status === 401 ? "Not logged in" : `Could not load the session (${res.status})`)
+    const json = (await res.json()) as { message?: Record<string, unknown> }
+    if (!json.message || typeof json.message !== "object") throw new Error("Could not load the session")
+    return json.message
+  }
+
   async initCSRF(): Promise<void> {
     if (this.csrfToken) return
     if (!this.csrfFetchPromise) {

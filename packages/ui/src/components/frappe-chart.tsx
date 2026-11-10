@@ -180,8 +180,8 @@ function PercentageBar({ data }: { data: FrappeChartData }) {
             </span>
             <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
               <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${pct}%`, backgroundColor: color(data.colors, i) }}
+                className="h-full w-full origin-left transition-transform"
+                style={{ transform: `scaleX(${pct / 100})`, backgroundColor: color(data.colors, i) }}
               />
             </div>
             <span className="w-10 text-muted-foreground shrink-0">{pct.toFixed(1)}%</span>
