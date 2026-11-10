@@ -19,6 +19,8 @@ const DROP_RESPONSE_HEADERS = new Set([
   "connection", "transfer-encoding", "keep-alive",
 ])
 
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
+
 async function buildResponse(frappeRes: Response): Promise<NextResponse> {
   const resHeaders = new Headers()
   frappeRes.headers.forEach((value, key) => {
@@ -41,6 +43,12 @@ async function buildResponse(frappeRes: Response): Promise<NextResponse> {
     resHeaders.append("Set-Cookie", stripCookieDomain(cookie))
   })
 
+  // 304 (browser revalidating a cached image/asset), 204 etc. must not carry a
+  // body — the Response constructor throws on one, which turned every cache
+  // revalidation of /files/* into a 500 and a broken <img>.
+  if (NULL_BODY_STATUSES.has(frappeRes.status)) {
+    return new NextResponse(null, { status: frappeRes.status, headers: resHeaders })
+  }
   const resBody = await frappeRes.arrayBuffer()
   return new NextResponse(resBody, { status: frappeRes.status, headers: resHeaders })
 }

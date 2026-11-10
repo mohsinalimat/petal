@@ -275,7 +275,7 @@ export default function SetupWizardPage() {
             {phase.kind === "done" ? "Taking you to your desk…" : `${phase.stage ?? "Working"}…`}
           </p>
           <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct}%` }} />
+            <div className="h-full w-full origin-left bg-primary transition-transform duration-500" style={{ transform: `scaleX(${pct / 100})` }} />
           </div>
           {phase.kind === "running" && (
             <p className="mt-3 text-xs text-muted-foreground">This can take a minute. Keep this tab open.</p>

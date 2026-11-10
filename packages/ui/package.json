@@ -7,6 +7,11 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
+    },
+    "./frappe-chart": {
+      "types": "./src/components/frappe-chart.tsx",
+      "import": "./src/components/frappe-chart.tsx",
+      "default": "./src/components/frappe-chart.tsx"
     }
   },
   "scripts": {

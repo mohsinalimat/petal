@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useFrappe } from "@/hooks/useFrappe"
 import { usePetalStore } from "@/store/petal-store"
 import {
-  FrappeChart, NumberCard, Button,
+  NumberCard, Button,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
@@ -13,9 +13,16 @@ import {
 import type { FrappeChartData } from "@petal/ui"
 import type { FrappeDocument } from "@petal/sdk"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import {
   MoreHorizontal, Filter, RefreshCw, Edit2, RotateCcw, ExternalLink,
 } from "lucide-react"
+
+// recharts is ~100 kB; most workspaces have no charts, so load it only when one renders.
+const FrappeChart = dynamic(() => import("@petal/ui/frappe-chart").then((m) => m.FrappeChart), {
+  ssr: false,
+  loading: () => <div className="h-[220px] animate-pulse rounded-lg bg-muted/40" />,
+})
 
 // ---------------------------------------------------------------------------
 // Types
@@ -813,7 +820,7 @@ function ChartWidget({
         <DialogContent
           className="max-w-md"
           onInteractOutside={(e) => {
-            if ((e.target as HTMLElement).closest?.("[data-link-portal]")) e.preventDefault()
+            if ((e.target as HTMLElement).closest?.("[data-link-portal],[data-petal-popover]")) e.preventDefault()
           }}
         >
           <DialogHeader>

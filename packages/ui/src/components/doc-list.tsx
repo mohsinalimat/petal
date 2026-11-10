@@ -249,8 +249,8 @@ function formatCell(val: unknown, fieldtype: string, currency = "USD"): React.Re
         <div className="flex items-center gap-2 min-w-[80px]">
           <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full bg-primary rounded-full transition-[width]"
-              style={{ width: `${clamped}%` }}
+              className="h-full w-full origin-left bg-primary transition-transform"
+              style={{ transform: `scaleX(${clamped / 100})` }}
             />
           </div>
           <span className="text-xs tabular-nums shrink-0 text-muted-foreground">{num.toLocaleString()}%</span>

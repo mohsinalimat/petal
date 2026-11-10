@@ -58,7 +58,7 @@ export function CompatHost() {
         <div className="fixed bottom-4 left-1/2 z-[71] w-[min(420px,calc(100vw-32px))] -translate-x-1/2 rounded-lg border border-border bg-background p-3 shadow-lg" role="status">
           <p className="text-sm font-medium text-foreground">{state.progress.title}</p>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, (state.progress.count / Math.max(1, state.progress.total)) * 100)}%` }} />
+            <div className="h-full w-full origin-left bg-primary transition-transform" style={{ transform: `scaleX(${Math.min(1, state.progress.count / Math.max(1, state.progress.total))})` }} />
           </div>
           {state.progress.description && <p className="mt-1.5 text-xs text-muted-foreground">{state.progress.description}</p>}
         </div>

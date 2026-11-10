@@ -519,7 +519,7 @@ export function ChildTable({
           <DialogContent
             className="max-w-2xl max-h-[85vh] overflow-y-auto"
             onInteractOutside={(e) => {
-              if (typeof document !== "undefined" && document.querySelector("[data-link-portal]")) {
+              if (typeof document !== "undefined" && document.querySelector("[data-link-portal],[data-petal-popover]")) {
                 e.preventDefault()
               }
             }}

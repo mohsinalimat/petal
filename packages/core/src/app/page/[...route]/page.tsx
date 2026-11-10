@@ -8,8 +8,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { usePetalStore } from "@/store/petal-store"
-import { openDeskPage, type DeskPage } from "@/lib/frappe-compat"
-import { startCompat } from "@/lib/frappe-compat/browser"
+// The compat runtime is loaded on demand (as on form/list pages) so it stays
+// out of this route's first-load bundle.
+import type { DeskPage } from "@/lib/frappe-compat"
 import { HtmlHost } from "@/app/form/[doctype]/[name]/components/FieldWrapper"
 import { DeskFallback } from "@/components/compat/DeskFallback"
 import { PageHeader } from "@/components/compat/PageHeader"
@@ -33,6 +34,9 @@ export default function DeskPageRoute() {
     setError(null)
     void (async () => {
       try {
+        const [{ openDeskPage }, { startCompat }] = await Promise.all([
+          import("@/lib/frappe-compat"), import("@/lib/frappe-compat/browser"),
+        ])
         await startCompat(config)
         const p = await openDeskPage(name)
         if (!cancelled) setDesk(p)

@@ -52,18 +52,33 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@petal/sdk", "@petal/ui"],
   output: "standalone",
+  // Lets a production build/start run beside `petal dev` without clobbering its .next
+  ...(process.env.PETAL_DIST_DIR ? { distDir: process.env.PETAL_DIST_DIR } : {}),
+  // Petal is open source, so shipping maps exposes nothing; they make prod
+  // stack traces readable (and satisfy Lighthouse). PETAL_SOURCE_MAPS=0 opts out.
+  productionBrowserSourceMaps: process.env.PETAL_SOURCE_MAPS !== "0",
   env: {
     PETAL_APP_ORIGINS: computeAppOrigins(),
     NEXT_PUBLIC_PETAL_REALTIME: process.env.PETAL_REALTIME || "1",
   },
   async rewrites() {
-    if (process.env.PETAL_REALTIME === "0") return []
-    const target = `${socketioUrl()}/socket.io`
-    return [
-      // socket.io always requests "/socket.io/?EIO=…" — keep the trailing slash intact
-      { source: "/socket.io/", destination: `${target}/` },
-      { source: "/socket.io/:path+", destination: `${target}/:path+` },
+    // Frappe stores attachments as "/files/x.png" / "/private/files/x.png" and
+    // fields render them as-is; send them through the API proxy (which picks
+    // the tenant's backend) instead of falling into the [...slug] page.
+    const beforeFiles = [
+      { source: "/files/:path+", destination: "/api/v1/files/:path+" },
+      { source: "/private/files/:path+", destination: "/api/v1/private/files/:path+" },
     ]
+    if (process.env.PETAL_REALTIME === "0") return { beforeFiles }
+    const target = `${socketioUrl()}/socket.io`
+    return {
+      beforeFiles,
+      afterFiles: [
+        // socket.io always requests "/socket.io/?EIO=…" — keep the trailing slash intact
+        { source: "/socket.io/", destination: `${target}/` },
+        { source: "/socket.io/:path+", destination: `${target}/:path+` },
+      ],
+    }
   },
   // Next's default 308 from "/socket.io/" → "/socket.io" would break the polling transport
   skipTrailingSlashRedirect: true,
