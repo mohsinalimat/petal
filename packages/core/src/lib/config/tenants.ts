@@ -1,6 +1,6 @@
 // Multi-tenancy: map request hostnames to their own Frappe backend and apps.
 //
-// Pure (no `fs`) so it can run in middleware on the edge runtime as well as in
+// Pure (no `fs`) so it can run in proxy.ts as well as in
 // route handlers. Enabled only when PETAL_TENANTS is set; otherwise Petal runs
 // single-tenant from FRAPPE_BACKEND_URL / petal.config.ts / PETAL_APPS.
 

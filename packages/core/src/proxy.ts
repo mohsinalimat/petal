@@ -27,7 +27,7 @@ function randomNonce(): string {
   return btoa(binary)
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const runtime = runtimeOrigins(req)
   if (runtime === null) {
     return new NextResponse("Unknown tenant", { status: 404, headers: { "Content-Type": "text/plain" } })
@@ -65,6 +65,30 @@ export function middleware(req: NextRequest) {
     "frame-ancestors 'none'",
     "form-action 'self'",
   ].join("; ")
+
+  // The print preview (PrintModal) frames Frappe's print page from this same
+  // origin, so it must allow same-origin framing. Print formats are
+  // user-authored HTML: no scripts run inside it (printing is driven from the
+  // parent via contentWindow.print()).
+  if (req.nextUrl.pathname === "/api/v1/printview") {
+    const res = NextResponse.next()
+    res.headers.set("Content-Security-Policy", [
+      "default-src 'self'",
+      "script-src 'none'",
+      // Print Settings / Print Style may @import web fonts (e.g. Google Fonts)
+      "style-src 'self' 'unsafe-inline' https:",
+      "img-src 'self' data: blob: https: http:",
+      "font-src 'self' data: https:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'none'",
+      "frame-ancestors 'self'",
+    ].join("; "))
+    res.headers.set("X-Frame-Options", "SAMEORIGIN")
+    res.headers.set("X-Content-Type-Options", "nosniff")
+    res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+    return res
+  }
 
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set("x-nonce", nonce)

@@ -6,11 +6,19 @@ const RD = globalThis.__petal_react_dom
 if (!RD) throw new Error("[Petal] react-dom shim: window.__petal_react_dom is not set")
 
 export default RD
+// React 19 removed findDOMNode and unmountComponentAtNode (and render/hydrate).
+// App bundles that still import them must migrate to refs / createRoot.
 export const {
   createPortal,
   flushSync,
-  findDOMNode,
-  unmountComponentAtNode,
+  preconnect,
+  prefetchDNS,
+  preinit,
+  preinitModule,
+  preload,
+  preloadModule,
+  requestFormReset,
   unstable_batchedUpdates,
+  useFormStatus,
   version,
 } = RD

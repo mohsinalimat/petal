@@ -16,6 +16,7 @@
  *   search/link          → api/method/frappe.desk.search.search_link
  *   reports/run          → api/method/frappe.desk.query_report.run
  *   upload               → api/method/upload_file
+ *   print/pdf            → api/method/frappe.utils.print_format.download_pdf
  *   exec/:method         → api/method/:method  (catch-all for callMethod())
  *   files/:rest          → files/:rest  (pass-through)
  */
@@ -33,6 +34,7 @@ export const EXACT_MAP: Record<string, string> = {
   "search/link": "api/method/frappe.desk.search.search_link",
   "reports/run": "api/method/frappe.desk.query_report.run",
   "upload": "api/method/upload_file",
+  "print/pdf": "api/method/frappe.utils.print_format.download_pdf",
 }
 
 /**
@@ -73,8 +75,14 @@ export function rewritePrintHtml(html: string): string {
     .replace(/(href|src)="\/assets\//g, '$1="/api/v1/assets/')
     .replace(/(href|src)="\/files\//g, '$1="/api/v1/files/')
     .replace(/url\(\/assets\//g, "url(/api/v1/assets/")
-    // Hide Frappe's built-in toolbar — Petal renders its own
-    .replace("</body>", "<style>.print-toolbar,[data-html2canvas-ignore]{display:none!important}</style></body>")
+    // Petal renders its own toolbar, and the preview runs no scripts (CSP), so
+    // hide Frappe's toolbar (.action-banner in v15+, .print-toolbar before) and
+    // apply in CSS the page-break/footer layout its inline script would set.
+    .replace("</body>", "<style>"
+      + ".print-toolbar,.action-banner,[data-html2canvas-ignore]{display:none!important}"
+      + ".page-break{display:flex;flex-direction:column}"
+      + "#footer-html{order:1;margin-top:20px}#footer-html.visible-pdf{display:block!important}"
+      + "</style></body>")
 }
 
 /** Remove the Domain attribute so cookies scoped to the Frappe host stick to the proxy origin. */

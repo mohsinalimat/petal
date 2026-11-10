@@ -25,10 +25,10 @@ export const metadata: Metadata = {
   description: "Modern frontend for Frappe",
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Set by middleware.ts on every request — required for these inline scripts
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Set by proxy.ts on every request — required for these inline scripts
   // to pass the Content-Security-Policy script-src directive.
-  const nonce = headers().get("x-nonce") ?? undefined
+  const nonce = (await headers()).get("x-nonce") ?? undefined
 
   return (
     <html lang="en" suppressHydrationWarning>

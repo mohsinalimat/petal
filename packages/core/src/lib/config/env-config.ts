@@ -1,4 +1,4 @@
-// Env-var parsing shared by route handlers and middleware. No `fs`, so it is
+// Env-var parsing shared by route handlers and proxy.ts. No `fs`, so it is
 // safe to import from the edge runtime.
 
 import type { PetalAppMeta } from "@petal/sdk"

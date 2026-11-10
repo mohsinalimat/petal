@@ -12,6 +12,7 @@ import {
 } from "@petal/ui"
 import type { FrappeChartData } from "@petal/ui"
 import type { FrappeDocument } from "@petal/sdk"
+import { loadChartSource, parseCustomChartFilters, resolveSourceFilters } from "@/lib/views/chart-source"
 import Link from "next/link"
 import dynamic from "next/dynamic"
 import {
@@ -383,6 +384,31 @@ function ChartWidget({
         result = { labels: rcLabels, datasets: rcDatasets, type: rcType }
         setResolvedFilters(reportFilters)
 
+      } else if (doc.chart_type === "Custom") {
+        // Source-backed chart: call the Dashboard Chart Source's own method, as Desk does.
+        const source = doc.source as string | undefined
+        if (!source) throw new Error("Custom chart has no Dashboard Chart Source set")
+        const settings = await loadChartSource(frappe, source, { Company: defaultCompany })
+        const filters = opts.useFilters
+          ? opts.useFilters
+          : resolveSourceFilters(settings, {
+              ...(defaultCompany ? { company: defaultCompany } : {}),
+              ...parseCustomChartFilters(doc.filters_json),
+            })
+
+        result = await frappe.callMethod<FrappeChartData>(
+          settings.method,
+          {
+            chart_name: doc.name,
+            filters,
+            refresh: 1,
+            time_interval: (opts.timeInterval ?? (doc.time_interval as string)) || null,
+            timespan: (opts.timespan ?? (doc.timespan as string)) || null,
+          },
+          { cache: opts.useFilters == null },
+        )
+        setResolvedFilters(filters)
+
       } else {
         // Doctype-based chart
         const ti = (opts.timeInterval ?? (doc.time_interval as string)) || "Monthly"
@@ -466,6 +492,20 @@ function ChartWidget({
               fieldtype: (row.fieldtype as string) || "Data",
               ...(row.options ? { options: row.options as string } : {}),
             }
+          }
+        }
+        setFilterFieldDefs(defs)
+      } catch { setFilterFieldDefs({}) }
+
+    } else if (doc.chart_type === "Custom" && doc.source) {
+      try {
+        const settings = await loadChartSource(frappe, doc.source as string, { Company: defaultCompany })
+        const defs: Record<string, { label: string; fieldtype: string; options?: string }> = {}
+        for (const f of settings.filters ?? []) {
+          defs[f.fieldname] = {
+            label: f.label || f.fieldname.replace(/_/g, " "),
+            fieldtype: f.fieldtype || "Data",
+            ...(f.options ? { options: Array.isArray(f.options) ? f.options.join("\n") : f.options } : {}),
           }
         }
         setFilterFieldDefs(defs)

@@ -121,7 +121,7 @@ This means the exact same Docker image works with any set of custom apps — jus
 
 | Feature | Frappe Desk | Petal |
 |---|---|---|
-| Frontend stack | Frappe JS (custom) | React 18 + Next.js 14 |
+| Frontend stack | Frappe JS (custom) | React 19 + Next.js 16 |
 | App discovery | Hardcoded in Frappe | Dynamic — Frappe Workspace API |
 | Custom apps | Frappe hooks/JS | Independent Vite bundles, any CDN |
 | Styling | Frappe theme | Tailwind CSS (per-app isolation) |

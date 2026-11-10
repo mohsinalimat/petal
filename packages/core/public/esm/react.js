@@ -7,6 +7,7 @@ if (!R) throw new Error("[Petal] react shim: window.__petal_react is not set")
 
 export default R
 export const {
+  Activity,
   Children,
   Component,
   Fragment,
@@ -23,16 +24,20 @@ export const {
   lazy,
   memo,
   startTransition,
+  use,
+  useActionState,
   useCallback,
   useContext,
   useDebugValue,
   useDeferredValue,
   useEffect,
+  useEffectEvent,
   useId,
   useImperativeHandle,
   useInsertionEffect,
   useLayoutEffect,
   useMemo,
+  useOptimistic,
   useReducer,
   useRef,
   useState,

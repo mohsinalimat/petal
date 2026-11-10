@@ -1,6 +1,6 @@
 # Petal
 
-> A modern, extensible React frontend for Frappe — built on Next.js 14.
+> A modern, extensible React frontend for Frappe — built on Next.js 16 and React 19.
 
 Petal is an open-source alternative to Frappe Desk. It connects to any Frappe  backend, auto-discovers workspaces and DocTypes, and ships a full form and list engine out of the box. Custom React apps plug in through a typed hooks API — adding sidebar items, custom pages, form overrides, and field behaviours without touching the core.
 
@@ -35,7 +35,7 @@ Petal is an open-source alternative to Frappe Desk. It connects to any Frappe  b
 │  Browser                                                       │
 │                                                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  @petal/core  (Next.js 14 App Router)                   │  │
+│  │  @petal/core  (Next.js 16 App Router)                   │  │
 │  │  ├─ Shell: Sidebar, Navbar, Auth guard                  │  │
 │  │  ├─ Built-in: /list, /form, /report, /workspace, …     │  │
 │  │  └─ petal.config.ts  ←  apps + pathMap                 │  │
